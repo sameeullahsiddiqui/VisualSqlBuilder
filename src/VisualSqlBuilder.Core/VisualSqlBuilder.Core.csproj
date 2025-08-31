@@ -5,17 +5,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
-    <RootNamespace>VisualSqlBuilder.Core</RootNamespace>
     <IncludeRazorContentInPack>true</IncludeRazorContentInPack>
    </PropertyGroup>
 
   <ItemGroup>
     <SupportedPlatform Include="browser" />
   </ItemGroup>
-  
-  <!--<ItemGroup>
-    <Content Include="wwwroot\**\*.*" Pack="true" PackagePath="wwwroot" />
-  </ItemGroup>-->
   
    <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="8.0.0" />

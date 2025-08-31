@@ -1,0 +1,134 @@
+﻿@page "/test-buttons"
+
+<PageTitle>Test Button Clicks</PageTitle>
+
+<div class="container mt-5">
+    <h3>Button Click Test Page</h3>
+    
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5>Test Buttons</h5>
+                    
+                    <!-- Test 1: Simple button -->
+                    <button type="button" class="btn btn-primary mb-2" @onclick="SimpleClick">
+                        Simple Click
+                    </button>
+                    <p>Simple clicks: @_simpleClickCount</p>
+                    
+                    <!-- Test 2: Button with lambda -->
+                    <button type="button" class="btn btn-success mb-2" @onclick="@(() => LambdaClick())">
+                        Lambda Click
+                    </button>
+                    <p>Lambda clicks: @_lambdaClickCount</p>
+                    
+                    <!-- Test 3: Button with parameter -->
+                    <button type="button" class="btn btn-info mb-2" @onclick="@(() => ParameterClick("Test"))">
+                        Parameter Click
+                    </button>
+                    <p>Parameter clicks: @_parameterClickCount</p>
+                    
+                    <!-- Test 4: Async button -->
+                    <button type="button" class="btn btn-warning mb-2" @onclick="AsyncClick" disabled="@_isProcessing">
+                        @if (_isProcessing)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        Async Click
+                    </button>
+                    <p>Async clicks: @_asyncClickCount</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5>Console Output</h5>
+                    <div class="console-output">
+                        @foreach (var message in _consoleMessages)
+                        {
+                            <div>@message</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .console-output {
+        height: 300px;
+        overflow-y: auto;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 10px;
+        font-family: monospace;
+        font-size: 12px;
+    }
+</style>
+
+@code {
+    private int _simpleClickCount = 0;
+    private int _lambdaClickCount = 0;
+    private int _parameterClickCount = 0;
+    private int _asyncClickCount = 0;
+    private bool _isProcessing = false;
+    private List<string> _consoleMessages = new();
+
+    protected override void OnInitialized()
+    {
+        AddConsoleMessage("Component initialized");
+    }
+
+    private void SimpleClick()
+    {
+        _simpleClickCount++;
+        AddConsoleMessage($"Simple click #{_simpleClickCount}");
+        StateHasChanged();
+    }
+
+    private void LambdaClick()
+    {
+        _lambdaClickCount++;
+        AddConsoleMessage($"Lambda click #{_lambdaClickCount}");
+        StateHasChanged();
+    }
+
+    private void ParameterClick(string parameter)
+    {
+        _parameterClickCount++;
+        AddConsoleMessage($"Parameter click #{_parameterClickCount} with: {parameter}");
+        StateHasChanged();
+    }
+
+    private async Task AsyncClick()
+    {
+        _isProcessing = true;
+        AddConsoleMessage("Async click started...");
+        StateHasChanged();
+
+        await Task.Delay(1000);
+
+        _asyncClickCount++;
+        _isProcessing = false;
+        AddConsoleMessage($"Async click #{_asyncClickCount} completed");
+        StateHasChanged();
+    }
+
+    private void AddConsoleMessage(string message)
+    {
+        var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+        _consoleMessages.Add($"[{timestamp}] {message}");
+        Console.WriteLine(message);
+        
+        // Keep only last 20 messages
+        if (_consoleMessages.Count > 20)
+        {
+            _consoleMessages.RemoveAt(0);
+        }
+    }
+}

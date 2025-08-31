@@ -1,0 +1,165 @@
+﻿@page "/settings"
+@inject IConfiguration Configuration
+
+<PageTitle>Settings</PageTitle>
+
+<div class="container-fluid">
+    <h3>Settings</h3>
+    
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Database Connections</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Default Connection</label>
+                        <select class="form-select" @bind="_selectedConnection">
+                            <option value="">-- Select Connection --</option>
+                            @foreach (var conn in _connections)
+                            {
+                                <option value="@conn.Name">@conn.Name</option>
+                            }
+                        </select>
+                    </div>
+                    
+                    <button class="btn btn-primary" @onclick="AddConnection">
+                        <i class="bi bi-plus"></i> Add Connection
+                    </button>
+                    
+                    <div class="mt-3">
+                        @foreach (var conn in _connections)
+                        {
+                            <div class="connection-item">
+                                <strong>@conn.Name</strong>
+                                <small class="text-muted">@conn.Server</small>
+                                <button class="btn btn-sm btn-danger float-end" @onclick="() => RemoveConnection(conn)">
+                                    Remove
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Azure OpenAI Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Endpoint</label>
+                        <input type="text" class="form-control" @bind="_azureEndpoint" 
+                               placeholder="https://your-resource.openai.azure.com/" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">API Key</label>
+                        <input type="password" class="form-control" @bind="_azureApiKey" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Deployment Name</label>
+                        <input type="text" class="form-control" @bind="_azureDeployment" 
+                               placeholder="gpt-4" />
+                    </div>
+                    <button class="btn btn-primary" @onclick="SaveAzureSettings">
+                        Save Azure Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Display Preferences</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" @bind="_showGrid" id="showGrid">
+                        <label class="form-check-label" for="showGrid">
+                            Show grid background
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" @bind="_snapToGrid" id="snapToGrid">
+                        <label class="form-check-label" for="snapToGrid">
+                            Snap to grid
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" @bind="_showMinimap" id="showMinimap">
+                        <label class="form-check-label" for="showMinimap">
+                            Show minimap
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .connection-item {
+        padding: 10px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-bottom: 10px;
+    }
+</style>
+
+@code {
+    private string _selectedConnection = "";
+    private List<ConnectionInfo> _connections = new();
+    private string _azureEndpoint = "";
+    private string _azureApiKey = "";
+    private string _azureDeployment = "gpt-4";
+    private bool _showGrid = true;
+    private bool _snapToGrid = false;
+    private bool _showMinimap = false;
+
+    protected override void OnInitialized()
+    {
+        LoadSettings();
+    }
+
+    private void LoadSettings()
+    {
+        _azureEndpoint = Configuration["AzureOpenAI:Endpoint"] ?? "";
+        _azureDeployment = Configuration["AzureOpenAI:DeploymentName"] ?? "gpt-4";
+        
+        // Load saved connections
+        _connections = new List<ConnectionInfo>
+        {
+            new ConnectionInfo { Name = "Local SQL Server", Server = "(localdb)\\mssqllocaldb" },
+            new ConnectionInfo { Name = "Docker SQL", Server = "localhost,1433" }
+        };
+    }
+
+    private void AddConnection()
+    {
+        // Show dialog to add new connection
+    }
+
+    private void RemoveConnection(ConnectionInfo conn)
+    {
+        _connections.Remove(conn);
+    }
+
+    private void SaveAzureSettings()
+    {
+        // Save to configuration
+        Console.WriteLine("Azure settings saved");
+    }
+
+    public class ConnectionInfo
+    {
+        public string Name { get; set; } = "";
+        public string Server { get; set; } = "";
+        public string Database { get; set; } = "";
+    }
+}

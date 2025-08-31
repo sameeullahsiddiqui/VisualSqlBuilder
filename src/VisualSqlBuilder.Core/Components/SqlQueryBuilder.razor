@@ -1,0 +1,929 @@
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+
+@inject IJSRuntime JSRuntime
+@inject ISchemaService SchemaService
+@inject ISqlGeneratorService SqlGenerator
+@inject IAzureOpenAIService OpenAIService
+@implements IAsyncDisposable
+
+<div class="visual-sql-builder">
+    <div class="toolbar">
+        <div class="btn-group" role="group">
+            <button class="btn btn-primary" type="button" @onclick="ShowConnectionDialog">
+                <i class="bi bi-database"></i> Connect Database
+            </button>
+            <InputFile id="excelFileInput" style="display:none" OnChange="HandleExcelSelected" />
+
+            <button class="btn btn-success" type="button" @onclick="ShowExcelUpload">
+                <i class="bi bi-file-earmark-excel"></i> Upload Excel
+            </button>
+            <button class="btn btn-info" type="button" @onclick="AddNewTable">
+                <i class="bi bi-table"></i> Add Table
+            </button>
+            <button class="btn btn-warning" type="button" @onclick="SaveLayout">
+                <i class="bi bi-save"></i> Save Layout
+            </button>
+            <button class="btn btn-secondary" type="button" @onclick="LoadLayout">
+                <i class="bi bi-folder-open"></i> Load Layout
+            </button>
+        </div>
+        
+        <div class="btn-group ms-3" role="group">
+            <button class="btn btn-outline-primary" type="button" @onclick="ZoomIn">
+                <i class="bi bi-zoom-in"></i>
+            </button>
+            <button class="btn btn-outline-primary" type="button" @onclick="ZoomOut">
+                <i class="bi bi-zoom-out"></i>
+            </button>
+            <button class="btn btn-outline-primary" type="button" @onclick="ResetZoom">
+                <i class="bi bi-arrows-fullscreen"></i>
+            </button>
+        </div>
+        
+        <div class="btn-group ms-3" role="group">
+            <button class="btn btn-success" type="button" @onclick="GenerateAndExecuteQuery">
+                <i class="bi bi-play-fill"></i> Execute Query
+            </button>
+        </div>
+    </div>
+
+    <ul id="rename-table-menu" class="context-menu">
+        <li data-action="rename">Rename Table</li>
+    </ul>
+    
+    <div class="main-container">
+        <div class="canvas-container" @ref="canvasElement" id="sql-canvas">
+            
+            <!-- SVG for relationship lines -->
+            <svg class="relationship-layer">
+            
+                @foreach (var relationship in _queryModel.Relationships)
+                {
+                    var sourceTable = _queryModel.Tables.FirstOrDefault(t => t.Id == relationship.SourceTableId);
+                    var targetTable = _queryModel.Tables.FirstOrDefault(t => t.Id == relationship.TargetTableId);
+                    
+                    if (sourceTable != null && targetTable != null)
+                    {
+                        var sourceCol = sourceTable.Columns.FirstOrDefault(c => c.Id == relationship.SourceColumnId);
+                        var targetCol = targetTable.Columns.FirstOrDefault(c => c.Id == relationship.TargetColumnId);
+                        
+                        if (sourceCol != null && targetCol != null)
+                        {
+                            var color = relationship.Type == RelationshipType.Primary ? "red" : "blue";
+                            var sourceY = sourceTable.Position.Y + 40 + (sourceTable.Columns.IndexOf(sourceCol) * 30);
+                            var targetY = targetTable.Position.Y + 40 + (targetTable.Columns.IndexOf(targetCol) * 30);
+                            
+                            <line class="relationship-line @(relationship.Type.ToString().ToLower())"
+                                  x1="@(sourceTable.Position.X + sourceTable.Size.Width)"
+                                  y1="@sourceY"
+                                  x2="@targetTable.Position.X"
+                                  y2="@targetY"
+                                  stroke="@color"
+                                  stroke-width="2"
+                                  @onclick="() => EditRelationship(relationship)"
+                                  data-relationship-id="@relationship.Id" />
+                            
+                            <!-- Cardinality label -->
+                            <svg:text x="@((sourceTable.Position.X + targetTable.Position.X) / 2)"
+                                  y="@((sourceY + targetY) / 2 - 5)"
+                                  class="cardinality-label">
+                                @relationship.Cardinality
+                            </svg:text>
+                        }
+                    }
+                }
+            </svg>
+
+            <!-- Domains -->
+            @foreach (var domain in _queryModel.Domains)
+            {
+                <div class="domain-container @(domain.IsCollapsed ? "collapsed" : "")" style="left: @(domain.Position.X)px; top: @(domain.Position.Y)px;
+                                            width: @(domain.Size.Width)px; height: @(domain.Size.Height)px;
+                                            background-color: @domain.Color;">
+                    <div class="domain-header">
+                        <span class="domain-name">@domain.Name</span>
+                        <button class="btn btn-sm btn-link" @onclick="() => ToggleDomain(domain)">
+                            <i class="bi bi-@(domain.IsCollapsed ? "chevron-down" : "chevron-up")"></i>
+                        </button>
+                    </div>
+                </div>
+            }
+
+            <!-- Tables -->
+            @foreach (var table in _queryModel.Tables)
+            {
+                <div class="table-card" 
+                     data-table-id="@table.Id"
+                     style="left: @(table.Position.X)px; top: @(table.Position.Y)px; 
+                            width: @(table.Size.Width)px; height: @(table.Size.Height)px;">
+                    <div class="table-header">
+                        <span class="table-name">@table.Name</span>
+                        <span class="table-alias">(@table.Alias)</span>
+                        <button class="btn btn-sm btn-link text-white" type="button" @onclick="() => RemoveTable(table)">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                    <div class="table-body">
+                        @foreach (var column in table.Columns)
+                        {
+                            <div class="column-row">
+                                <span class="column-connector left" 
+                                      data-column-id="@column.Id"
+                                      data-table-id="@table.Id"></span>
+                                <input type="checkbox" @bind="column.IsSelected" />
+                                <span class="column-name">
+                                    @if (column.IsPrimaryKey)
+                                    {
+                                        <i class="bi bi-key text-warning"></i>
+                                    }
+                                    @column.Name
+                                </span>
+                                <span class="column-type">@column.DataType</span>
+                                @if (column.Filter != null)
+                                {
+                                    <i class="bi bi-funnel-fill text-info"></i>
+                                }
+                                <span class="column-connector right" 
+                                      data-column-id="@column.Id"
+                                      data-table-id="@table.Id"></span>
+                            </div>
+                        }
+                        <button class="btn btn-sm btn-link" type="button" @onclick="() => AddColumn(table)">
+                            <i class="bi bi-plus"></i> Add Column
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* The rename modal *@
+        @if (showRenameModal)
+        {
+            <div class="modal fade show d-block" tabindex="-1" role="dialog">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Rename Table</h5>
+                            <button type="button" class="btn-close" @onclick="CloseRenameModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>Enter a new name for the table:</p>
+                            <input type="text" class="form-control" @bind="newTableName" />
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseRenameModal">Cancel</button>
+                            <button type="button" class="btn btn-primary" @onclick="HandleRenameSubmit">Rename</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+
+        <div class="sidebar">
+            <ul class="nav nav-tabs" role="tablist">
+                <li class="nav-item">
+                    <a class="nav-link active" data-bs-toggle="tab" href="#sql-preview">SQL</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-bs-toggle="tab" href="#properties">Properties</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-bs-toggle="tab" href="#validation">Validation</a>
+                </li>
+            </ul>
+            
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="sql-preview">
+                    <div class="sql-preview">
+                        <pre><code>@_generatedSql</code></pre>
+                    </div>
+                </div>
+                
+                <div class="tab-pane fade" id="properties">
+                    @if (_selectedTable != null)
+                    {
+                        <div class="properties-panel">
+                            <h5>Table Properties</h5>
+                            <div class="mb-3">
+                                <label>Name:</label>
+                                <input type="text" class="form-control" @bind="_selectedTable.Name" />
+                            </div>
+                            <div class="mb-3">
+                                <label>Alias:</label>
+                                <input type="text" class="form-control" @bind="_selectedTable.Alias" />
+                            </div>
+                            <div class="mb-3">
+                                <label>Domain:</label>
+                                <select class="form-control" @bind="_selectedTable.DomainId">
+                                    <option value="">None</option>
+                                    @foreach (var domain in _queryModel.Domains)
+                                    {
+                                        <option value="@domain.Id">@domain.Name</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    }
+                </div>
+                
+                <div class="tab-pane fade" id="validation">
+                    <div class="validation-panel">
+                        <h5>Validation Rules</h5>
+                        <button class="btn btn-sm btn-primary" type="button" @onclick="AddValidationRule">
+                            <i class="bi bi-plus"></i> Add Rule
+                        </button>
+                        @foreach (var rule in _validationRules)
+                        {
+                            <div class="validation-rule">
+                                <input type="text" @bind="rule.Name" placeholder="Rule name" />
+                                <select @bind="rule.RuleType">
+                                    <option value="SQL">SQL</option>
+                                    <option value="CSharp">C#</option>
+                                </select>
+                                <textarea @bind="rule.Expression" placeholder="Expression"></textarea>
+                                <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveValidationRule(rule)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Query Results -->
+    @if (_queryResults != null)
+    {
+        <div class="query-results">
+            <h5>Query Results (@_queryResults.Rows.Count rows)</h5>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            @foreach (System.Data.DataColumn column in _queryResults.Columns)
+                            {
+                                <th>@column.ColumnName</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (System.Data.DataRow row in _queryResults.Rows)
+                        {
+                            <tr>
+                                @foreach (var item in row.ItemArray)
+                                {
+                                    <td>@item?.ToString()</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <!-- Connection Modal (Bootstrap Modal) -->
+    @if (_showConnectionModal)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Database Connection</h5>
+                        <button type="button" class="btn-close" @onclick="CloseConnectionDialog"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Connection String:</label>
+                            <textarea class="form-control" @bind="ConnectionString" rows="3" 
+                                      placeholder="Server=localhost;Database=YourDB;User Id=sa;Password=YourPassword;TrustServerCertificate=True"></textarea>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_connectionError))
+                        {
+                            <div class="alert alert-danger">
+                                @_connectionError
+                            </div>
+                        }
+                        @if (_isConnecting)
+                        {
+                            <div class="alert alert-info">
+                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                Connecting to database...
+                            </div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseConnectionDialog">Cancel</button>
+                        <button type="button" class="btn btn-primary" @onclick="ConnectToDatabase" disabled="@_isConnecting">
+                            Connect
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Excel Upload Modal -->
+    @if (_showExcelModal)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Upload Excel File</h5>
+                        <button type="button" class="btn-close" @onclick="CloseExcelDialog"></button>
+                    </div>
+                    <div class="modal-body">
+                        @* <ExcelUpload OnTablesImported="HandleExcelTablesImported" OnRelationshipsSuggested="HandleRelationshipsSuggested" /> *@                    
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private QueryModel _queryModel = new();
+    //private string _connectionString = "";
+    private string _generatedSql = "";
+    private TableModel? _selectedTable;
+    private List<ValidationRule> _validationRules = new();
+    private System.Data.DataTable? _queryResults;
+    private ElementReference canvasElement;
+    
+    private double _zoomLevel = 1.0;
+    
+    [Parameter]
+    public string? ConnectionString { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnQueryGenerated { get; set; }
+
+    // Modal states
+    private bool _showConnectionModal = false;
+    private bool _showExcelModal = false;
+    private bool _isConnecting = false;
+    private string _connectionError = "";
+    
+    // JavaScript module
+    private IJSObjectReference? _jsModule;
+    
+    // State for the rename modal
+    private bool showRenameModal = false;
+    private string currentTableIdForRename;
+    private string newTableName;
+
+    // This is the C# object reference that JavaScript will use
+    private DotNetObjectReference<SqlQueryBuilder> dotNetHelper;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine("VisualSqlBuilder initialized");
+
+        // Initialize with default connection string if available
+        //_connectionString = "Server=(localdb)\\mssqllocaldb;Database=TestDB;Trusted_Connection=True;";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                // Create the DotNetObjectReference instance
+                dotNetHelper = DotNetObjectReference.Create(this);
+
+                // Import the JavaScript module
+                _jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                    "import", "./_content/VisualSqlBuilder.Core/visual-sql-builder.js");
+                
+                // Initialize canvas
+                await InitializeCanvas();                
+                await JSRuntime.InvokeVoidAsync("console.log", "Canvas initialization completed");
+
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing JavaScript: {ex.Message}");                
+                await JSRuntime.InvokeVoidAsync("console.error", $"Canvas initialization failed: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task InitializeCanvas()
+    {
+        try
+        {
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("initializeSqlCanvas", canvasElement);                        
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing canvas: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"Canvas initialization failed: {ex.Message}");
+        }
+    }
+
+     [JSInvokable]
+    public void ShowRenameModal(string tableId, string currentName)
+    {
+        currentTableIdForRename = tableId;
+        newTableName = currentName;
+        showRenameModal = true;
+        StateHasChanged();
+    }
+
+    private void HandleRenameSubmit()
+    {
+        if (!string.IsNullOrWhiteSpace(newTableName))
+        {
+            // This is where you would update your data model.
+            // Example: Find the table by currentTableIdForRename and update its name
+            Console.WriteLine($"Renaming table {currentTableIdForRename} to {newTableName}");
+
+            // TODO: Call a service or state management function to persist the change.
+            // e.g. _tableService.RenameTable(currentTableIdForRename, newTableName);
+
+            // Hide the modal
+            CloseRenameModal();
+        }
+    }
+
+    private void CloseRenameModal()
+    {
+        showRenameModal = false;
+        StateHasChanged();
+    }
+
+    private void ShowConnectionDialog()
+    {
+        Console.WriteLine("ShowConnectionDialog called");
+        _showConnectionModal = true;
+        _connectionError = "";
+        StateHasChanged();
+    }
+
+    private void CloseConnectionDialog()
+    {
+        _showConnectionModal = false;
+        _connectionError = "";
+        _isConnecting = false;
+        StateHasChanged();
+    }
+
+
+    private void CloseExcelDialog()
+    {
+        _showExcelModal = false;
+        StateHasChanged();
+    }
+
+    public async Task ShowExcelUpload()
+    {
+        await JSRuntime.InvokeVoidAsync("triggerClick", "excelFileInput");
+        StateHasChanged();
+    }
+
+    private async Task HandleExcelSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file != null)
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 10_000_000); // 10 MB limit
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+
+            byte[] fileBytes = ms.ToArray();
+
+            // TODO: parse Excel (use ClosedXML or EPPlus if Core supports it)
+            Console.WriteLine($"Uploaded {file.Name} with {fileBytes.Length} bytes");
+        }
+    }
+
+    private async Task ConnectToDatabase()
+    {
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+        {
+            _connectionError = "Please enter a connection string.";
+            return;
+        }
+
+        _isConnecting = true;
+        _connectionError = "";
+        StateHasChanged();
+
+        try
+        {
+            Console.WriteLine($"Connecting with: {ConnectionString}");
+            
+            var tables = await SchemaService.LoadTablesFromSqlServerAsync(ConnectionString);
+            var relationships = await SchemaService.LoadRelationshipsFromSqlServerAsync(ConnectionString, tables);
+            
+            _queryModel.Tables.Clear();
+            _queryModel.Relationships.Clear();
+            
+            _queryModel.Tables.AddRange(tables);
+            _queryModel.Relationships.AddRange(relationships);
+            
+            // Position tables on canvas
+            PositionTables();
+            
+            // Close modal
+            CloseConnectionDialog();
+            
+            // Update SQL preview
+            UpdateSqlPreview();
+            
+            Console.WriteLine($"Loaded {tables.Count} tables and {relationships.Count} relationships");
+        }
+        catch (Exception ex)
+        {
+            _connectionError = $"Connection failed: {ex.Message}";
+            Console.WriteLine($"Connection error: {ex}");
+        }
+        finally
+        {
+            _isConnecting = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task HandleExcelTablesImported(List<TableModel> tables)
+    {
+        _queryModel.Tables.AddRange(tables);
+        PositionTables();
+        CloseExcelDialog();
+        UpdateSqlPreview();
+
+        return Task.CompletedTask;
+    }
+
+    private Task HandleRelationshipsSuggested(List<RelationshipModel> relationships)
+    {
+        _queryModel.Relationships.AddRange(relationships);
+        StateHasChanged();
+
+        return Task.CompletedTask;
+    }
+
+    private void PositionTables()
+    {
+        int x = 50, y = 50;
+        int maxHeight = 0;
+        
+        foreach (var table in _queryModel.Tables)
+        {
+            table.Position = new Position { X = x, Y = y };
+            
+            x += 300;
+            maxHeight = Math.Max(maxHeight, (int)table.Size.Height);
+            
+            if (x > 1200)
+            {
+                x = 50;
+                y += maxHeight + 50;
+                maxHeight = 0;
+            }
+        }
+    }
+
+    private void AddNewTable()
+    {
+        var newTable = new TableModel
+        {
+            Name = "NewTable",
+            Alias = "nt",
+            Schema = "dbo",
+            Position = new Position { X = 100, Y = 100 }
+        };
+        
+        // Add default metadata columns
+        newTable.Columns.Add(new ColumnModel { Name = "Id", DataType = "int", IsPrimaryKey = true });
+        newTable.Columns.Add(new ColumnModel { Name = "CreatedBy", DataType = "nvarchar" });
+        newTable.Columns.Add(new ColumnModel { Name = "CreatedAt", DataType = "datetime2" });
+        newTable.Columns.Add(new ColumnModel { Name = "ModifiedBy", DataType = "nvarchar" });
+        newTable.Columns.Add(new ColumnModel { Name = "ModifiedAt", DataType = "datetime2" });
+        
+        _queryModel.Tables.Add(newTable);
+        UpdateSqlPreview();
+    }
+
+    private void RemoveTable(TableModel table)
+    {
+        _queryModel.Tables.Remove(table);
+        _queryModel.Relationships.RemoveAll(r => 
+            r.SourceTableId == table.Id || r.TargetTableId == table.Id);
+        UpdateSqlPreview();
+    }
+
+    private void AddColumn(TableModel table)
+    {
+        table.Columns.Add(new ColumnModel
+        {
+            Name = "NewColumn",
+            DataType = "nvarchar",
+            MaxLength = 255
+        });
+        UpdateSqlPreview();
+    }
+
+    private void EditRelationship(RelationshipModel relationship)
+    {
+        // Open relationship editor
+        Console.WriteLine($"Edit relationship: {relationship.Id}");
+    }
+
+    private void ToggleDomain(DomainModel domain)
+    {
+        domain.IsCollapsed = !domain.IsCollapsed;
+    }
+
+    private void AddValidationRule()
+    {
+        _validationRules.Add(new ValidationRule
+        {
+            Name = "New Rule",
+            RuleType = "SQL",
+            IsActive = true
+        });
+    }
+
+    private void RemoveValidationRule(ValidationRule rule)
+    {
+        _validationRules.Remove(rule);
+    }
+
+    private void UpdateSqlPreview()
+    {
+        try
+        {
+            _generatedSql = SqlGenerator.GenerateQuery(_queryModel);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _generatedSql = $"-- Error generating SQL: {ex.Message}";
+        }
+    }
+
+    private async Task GenerateAndExecuteQuery()
+    {
+        UpdateSqlPreview();
+        
+        if (!string.IsNullOrEmpty(ConnectionString) && !string.IsNullOrEmpty(_generatedSql))
+        {
+            try
+            {
+                _queryResults = await SchemaService.ExecuteQueryAsync(ConnectionString, _generatedSql, 100);
+
+                // notify parent
+                if (OnQueryGenerated.HasDelegate)
+                    await OnQueryGenerated.InvokeAsync(_generatedSql);
+
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Query execution error: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task SaveLayout()
+    {
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(_queryModel);
+            
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("saveToLocalStorage", "sqlBuilderLayout", json);
+            }
+            
+            Console.WriteLine("Layout saved successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving layout: {ex.Message}");
+        }
+    }
+
+    private async Task LoadLayout()
+    {
+        try
+        {
+            if (_jsModule != null)
+            {
+                var json = await _jsModule.InvokeAsync<string>("loadFromLocalStorage", "sqlBuilderLayout");
+                if (!string.IsNullOrEmpty(json))
+                {
+                    _queryModel = System.Text.Json.JsonSerializer.Deserialize<QueryModel>(json) ?? new QueryModel();
+                    StateHasChanged();
+                    Console.WriteLine("Layout loaded successfully");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading layout: {ex.Message}");
+        }
+    }
+
+    private async Task ZoomIn()
+    {
+        _zoomLevel = Math.Min(_zoomLevel * 1.2, 3.0);
+        if (_jsModule != null)
+        {
+            await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
+        }
+    }
+
+    private async Task ZoomOut()
+    {
+        _zoomLevel = Math.Max(_zoomLevel / 1.2, 0.3);
+        if (_jsModule != null)
+        {
+            await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
+        }
+    }
+
+    private async Task ResetZoom()
+    {
+        _zoomLevel = 1.0;
+        if (_jsModule != null)
+        {
+            await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_jsModule != null)
+        {
+            await _jsModule.DisposeAsync();
+        }
+    }
+}
+
+
+@* ## 2. Test Connection Strings for Development
+Add these to your `appsettings.Development.json`:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Debug",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=TestDB;Trusted_Connection=True;MultipleActiveResultSets=true",
+    "SqlExpress": "Server=.\\SQLEXPRESS;Database=TestDB;Trusted_Connection=True;TrustServerCertificate=True;",
+    "DockerSql": "Server=localhost,1433;Database=TestDB;User Id=sa;Password=YourStrong@Password123;TrustServerCertificate=True;"
+  }
+}
+```
+ *@
+
+@* ## 3. Debugging Tips
+
+### Add this test page to verify the component loads: `src/VisualSqlBuilder.Demo/Pages/Test.razor`
+```razor
+@page "/test"
+
+<h3>Component Test</h3>
+
+<button class="btn btn-primary" @onclick="TestClick">Test Button Click</button>
+
+<p>Click count: @_clickCount</p>
+
+@if (_showModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Test Modal</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    Modal is working!
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private int _clickCount = 0;
+    private bool _showModal = false;
+
+    private void TestClick()
+    {
+        _clickCount++;
+        _showModal = true;
+        Console.WriteLine($"Button clicked {_clickCount} times");
+    }
+
+    private void CloseModal()
+    {
+        _showModal = false;
+    }
+}
+```
+
+## 4. Common Issues and Solutions
+
+### Issue 1: JavaScript not loading
+**Solution:** Ensure the JavaScript file is in the correct location and marked as content:
+
+In `VisualSqlBuilder.Core.csproj`, add:
+```xml
+<ItemGroup>
+  <Content Include="wwwroot\**\*" />
+</ItemGroup>
+```
+
+### Issue 2: Bootstrap not loading
+**Solution:** Check that Bootstrap is loaded in `_Layout.cshtml`:
+```html
+<!-- Ensure these are present -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+```
+
+### Issue 3: SignalR connection issues
+**Solution:** Check browser console for errors. Add logging:
+```csharp
+// In Program.cs
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+});
+
+builder.Logging.AddConsole();
+builder.Logging.SetMinimumLevel(LogLevel.Debug);
+```
+
+## 5. Simplified JavaScript (if module loading fails): `src/VisualSqlBuilder.Core/wwwroot/visual-sql-builder-simple.js`
+```javascript
+// Simplified version without module syntax
+window.visualSqlBuilder = {
+    initializeSqlCanvas: function(element) {
+        console.log('Canvas initialized', element);
+    },
+    
+    setCanvasZoom: function(zoom) {
+        console.log('Zoom set to', zoom);
+        const canvas = document.getElementById('sql-canvas');
+        if (canvas) {
+            canvas.style.transform = `scale(${zoom})`;
+        }
+    },
+    
+    saveToLocalStorage: function(key, value) {
+        localStorage.setItem(key, value);
+        console.log('Saved to localStorage', key);
+    },
+    
+    loadFromLocalStorage: function(key) {
+        const value = localStorage.getItem(key);
+        console.log('Loaded from localStorage', key);
+        return value;
+    }
+};
+```
+
+Then use it directly in the component:
+```csharp
+await JSRuntime.InvokeVoidAsync("visualSqlBuilder.initializeSqlCanvas", canvasElement);
+```
+
+## Key Changes Made:
+
+1. **Removed Bootstrap Modal JavaScript Dependency** - Using pure Blazor state management for modals
+2. **Added `type="button"` to all buttons** - Prevents form submission issues
+3. **Added proper error handling and logging**
+4. **Used `@onclick` instead of JavaScript for modal handling**
+5. **Added loading states and error messages**
+6. **Implemented `IAsyncDisposable` for proper cleanup**
+
+## To Debug:
+
+1. **Check Browser Console** for JavaScript errors
+2. **Add breakpoints** in the `ShowConnectionDialog` method
+3. **Check Network tab** to ensure all resources load
+4. **Verify SignalR connection** is established
+5. **Test with the `/test` page first** to ensure basic functionality works
+
+The connection dialog should now work properly with these fixes! *@

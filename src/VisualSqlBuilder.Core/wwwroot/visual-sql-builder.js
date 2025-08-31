@@ -1,11 +1,13 @@
 window.sqlBuilderInterop = {
     canvasElement: null,
+    dotNetHelper: null, 
     interact: null,
     zoom: 1,
 
-    initializeSqlCanvas: function (element) {
-        console.log('Canvas element received:', canvasElement);
+    initializeSqlCanvas: function (element, dotNetHelper) {
+        console.log('Canvas element received:', element);
         this.canvasElement = element;
+        this.dotNetHelper = dotNetHelper; // Store the C# reference
 
         // Load interact.js
         if (!window.interact) {
@@ -13,10 +15,12 @@ window.sqlBuilderInterop = {
             script.src = 'https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js';
             script.onload = () => {
                 this.setupInteractions();
+                this.setupContextMenu();
             };
             document.head.appendChild(script);
         } else {
             this.setupInteractions();
+            this.setupContextMenu();
         }
     },
 
@@ -33,14 +37,14 @@ window.sqlBuilderInterop = {
                 ],
                 autoScroll: true,
                 listeners: {
-                    move: this.dragMoveListener,
-                    end: this.dragEndListener
+                    move: this.dragMoveListener.bind(this),
+                    end: this.dragEndListener.bind(this)
                 }
             })
             .resizable({
                 edges: { left: true, right: true, bottom: true, top: true },
                 listeners: {
-                    move: this.resizeMoveListener
+                    move: this.resizeMoveListener.bind(this)
                 },
                 modifiers: [
                     interact.modifiers.restrictEdges({
@@ -61,16 +65,57 @@ window.sqlBuilderInterop = {
             .draggable({
                 allowFrom: '.domain-header',
                 listeners: {
-                    move: this.dragMoveListener
+                    move: this.dragMoveListener.bind(this)
                 }
             })
             .resizable({
                 edges: { left: true, right: true, bottom: true, top: true },
                 listeners: {
-                    move: this.resizeMoveListener
+                    move: this.resizeMoveListener.bind(this)
                 }
             });
     },
+
+    setupContextMenu: function () {
+        const contextMenu = document.getElementById('rename-table-menu');
+        let currentTableId = null;
+
+        // Listen for right-click on the table cards
+        this.canvasElement.addEventListener('contextmenu', (e) => {
+            const tableHeader = e.target.closest('.table-card-header');
+            if (tableHeader) {
+                e.preventDefault(); // Prevent the default browser context menu
+
+                currentTableId = tableHeader.parentElement.getAttribute('data-table-id');
+
+                // Position and show the custom menu
+                contextMenu.style.display = 'block';
+                contextMenu.style.left = `${e.clientX}px`;
+                contextMenu.style.top = `${e.clientY}px`;
+            } else {
+                contextMenu.style.display = 'none'; // Hide if click is not on a table header
+            }
+        });
+
+        // Hide the context menu on any left-click
+        document.addEventListener('click', () => {
+            contextMenu.style.display = 'none';
+        });
+
+        // Handle clicks on the menu items
+        contextMenu.addEventListener('click', (e) => {
+            const action = e.target.getAttribute('data-action');
+            if (action === 'rename' && currentTableId) {
+                // Find the current name to pass it to the C# modal
+                const tableNameElement = document.querySelector(`[data-table-id="${currentTableId}"] .table-card-header-text`);
+                const currentName = tableNameElement ? tableNameElement.textContent : '';
+
+                // Call the C# method using the DotNetObjectReference
+                this.dotNetHelper.invokeMethodAsync('ShowRenameModal', currentTableId, currentName);
+            }
+        });
+    },
+
 
     dragMoveListener: function (event) {
         const target = event.target;
@@ -81,8 +126,7 @@ window.sqlBuilderInterop = {
         target.setAttribute('data-x', x);
         target.setAttribute('data-y', y);
 
-        // Update relationship lines
-        window.sqlBuilderInterop.updateRelationshipLines();
+        this.updateRelationshipLines();
     },
 
     dragEndListener: function (event) {
@@ -113,7 +157,7 @@ window.sqlBuilderInterop = {
         Object.assign(target.dataset, { x, y });
 
         // Update relationship lines
-        window.sqlBuilderInterop.updateRelationshipLines();
+        this.updateRelationshipLines();
     },
 
     setupColumnConnectors: function () {
@@ -181,7 +225,7 @@ window.sqlBuilderInterop = {
 
     setCanvasZoom: function (zoom) {
         this.zoom = zoom;
-        const canvas = document.getElementById('sql-canvas');
+        const canvas = this.canvasElement;
         if (canvas) {
             canvas.style.transform = `scale(${zoom})`;
             canvas.style.transformOrigin = 'top left';
@@ -209,17 +253,44 @@ window.sqlBuilderInterop = {
     }
 };
 
-// Initialize when document is ready
-document.addEventListener('DOMContentLoaded', function () {
-    if (window.sqlBuilderInterop.canvasElement) {
-        window.sqlBuilderInterop.initializeSqlCanvas(window.sqlBuilderInterop.canvasElement);
-    }
-});
+export function initializeSqlCanvas(element, dotNetHelper) {
+    window.sqlBuilderInterop.initializeSqlCanvas(element, dotNetHelper);
+}
+
+export function setCanvasZoom(zoomLevel) {
+    // This calls the internal method on your main object.
+    window.sqlBuilderInterop.setCanvasZoom.call(window.sqlBuilderInterop, zoomLevel);
+}
+
+export function showModal(modalId) {
+    window.sqlBuilderInterop.showModal.call(window.sqlBuilderInterop, modalId);
+}
+
+export function hideModal(modalId) {
+    window.sqlBuilderInterop.hideModal.call(window.sqlBuilderInterop, modalId);
+}
+
+export function saveToLocalStorage(key, value) {
+    window.sqlBuilderInterop.saveToLocalStorage.call(window.sqlBuilderInterop, key, value);
+}
+
+export function loadFromLocalStorage(key) {
+    return window.sqlBuilderInterop.loadFromLocalStorage.call(window.sqlBuilderInterop, key);
+}
+
+
+window.initializeSqlCanvas = initializeSqlCanvas;
+window.setCanvasZoom = setCanvasZoom;
+window.showModal = showModal;
+window.hideModal = hideModal;
+window.saveToLocalStorage = saveToLocalStorage;
+window.loadFromLocalStorage = loadFromLocalStorage;
 
 // Export for Blazor
-window.initializeSqlCanvas = window.sqlBuilderInterop.initializeSqlCanvas.bind(window.sqlBuilderInterop);
-window.setCanvasZoom = window.sqlBuilderInterop.setCanvasZoom.bind(window.sqlBuilderInterop);
-window.showModal = window.sqlBuilderInterop.showModal.bind(window.sqlBuilderInterop);
-window.hideModal = window.sqlBuilderInterop.hideModal.bind(window.sqlBuilderInterop);
-window.saveToLocalStorage = window.sqlBuilderInterop.saveToLocalStorage.bind(window.sqlBuilderInterop);
-window.loadFromLocalStorage = window.sqlBuilderInterop.loadFromLocalStorage.bind(window.sqlBuilderInterop);
+// These are correct and work by binding the functions to the correct object context.
+//window.initializeSqlCanvas = window.sqlBuilderInterop.initializeSqlCanvas.bind(window.sqlBuilderInterop);
+//window.setCanvasZoom = window.sqlBuilderInterop.setCanvasZoom.bind(window.sqlBuilderInterop);
+//window.showModal = window.sqlBuilderInterop.showModal.bind(window.sqlBuilderInterop);
+//window.hideModal = window.sqlBuilderInterop.hideModal.bind(window.sqlBuilderInterop);
+//window.saveToLocalStorage = window.sqlBuilderInterop.saveToLocalStorage.bind(window.sqlBuilderInterop);
+//window.loadFromLocalStorage = window.sqlBuilderInterop.loadFromLocalStorage.bind(window.sqlBuilderInterop);

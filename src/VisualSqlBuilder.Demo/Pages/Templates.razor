@@ -1,0 +1,140 @@
+﻿@page "/templates"
+@using VisualSqlBuilder.Core.Services
+
+@inject ILayoutStorageService LayoutStorage
+@inject IConfiguration Configuration
+
+<PageTitle>Query Templates</PageTitle>
+
+<div class="container-fluid">
+    <h3>Query Templates</h3>
+    
+    <div class="row mt-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-people-fill"></i> Customer Orders
+                    </h5>
+                    <p class="card-text">Join customers with orders and order details</p>
+                    <button class="btn btn-primary" @onclick="@(() => LoadTemplate("customer-orders"))">
+                        Load Template
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-box-seam"></i> Product Inventory
+                    </h5>
+                    <p class="card-text">Products with categories and inventory levels</p>
+                    <button class="btn btn-primary" @onclick="@(() => LoadTemplate("product-inventory"))">
+                        Load Template
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-graph-up"></i> Sales Report
+                    </h5>
+                    <p class="card-text">Sales data with date ranges and aggregations</p>
+                    <button class="btn btn-primary" @onclick="@(() => LoadTemplate("sales-report"))">
+                        Load Template
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <h4 class="mt-5">Saved Layouts</h4>
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Created</th>
+                    <th>Modified</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var layout in _savedLayouts)
+                {
+                    <tr>
+                        <td>@(layout.Name)</td>
+                        <td>@(layout.CreatedAt.ToString("g"))</td>
+                        <td>@(layout.ModifiedAt.ToString("g"))</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" @onclick="() => LoadLayout(layout.Id)">
+                                Load
+                            </button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteLayout(layout.Id)">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<VisualSqlBuilder.Core.Models.CanvasState> _savedLayouts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSavedLayouts();
+    }
+
+    private async Task LoadSavedLayouts()
+    {
+        try
+        {
+            var connectionString = Configuration.GetConnectionString("DefaultConnection");
+            if (!string.IsNullOrEmpty(connectionString))
+            {
+                _savedLayouts = await LayoutStorage.GetAllLayoutsAsync(connectionString);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading layouts: {ex.Message}");
+        }
+    }
+
+    private void LoadTemplate(string templateName = "")
+    {
+        // Navigate to builder with template
+        // Implementation would load predefined template
+    }
+
+    private async Task LoadLayout(string layoutId)
+    {
+        // Navigate to builder and load layout
+    }
+
+    private async Task DeleteLayout(string layoutId)
+    {
+        try
+        {
+            var connectionString = Configuration.GetConnectionString("DefaultConnection");
+            if (!string.IsNullOrEmpty(connectionString))
+            {
+                await LayoutStorage.DeleteLayoutAsync(connectionString, layoutId);
+                await LoadSavedLayouts();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting layout: {ex.Message}");
+        }
+    }
+}

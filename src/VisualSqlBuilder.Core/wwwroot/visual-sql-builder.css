@@ -24,9 +24,7 @@
     position: relative;
     overflow: auto;
     background: #fafafa;
-    background-image:
-        linear-gradient(rgba(0, 0, 0, .05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 0, 0, .05) 1px, transparent 1px);
+    background-image: linear-gradient(rgba(0, 0, 0, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 0, 0, .05) 1px, transparent 1px);
     background-size: 20px 20px;
 }
 
@@ -46,17 +44,17 @@
     transition: stroke-width 0.2s;
 }
 
-.relationship-line:hover {
-    stroke-width: 4;
-}
+    .relationship-line:hover {
+        stroke-width: 4;
+    }
 
-.relationship-line.primary {
-    stroke: #dc3545;
-}
+    .relationship-line.primary {
+        stroke: #dc3545;
+    }
 
-.relationship-line.secondary {
-    stroke: #0d6efd;
-}
+    .relationship-line.secondary {
+        stroke: #0d6efd;
+    }
 
 .cardinality-label {
     font-size: 12px;
@@ -72,9 +70,9 @@
     z-index: 0;
 }
 
-.domain-container.collapsed {
-    height: 40px !important;
-}
+    .domain-container.collapsed {
+        height: 40px !important;
+    }
 
 .domain-header {
     padding: 8px;
@@ -101,9 +99,9 @@
     min-height: 150px;
 }
 
-.table-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
+    .table-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
 
 .table-header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -139,9 +137,9 @@
     transition: background 0.2s;
 }
 
-.column-row:hover {
-    background: #f0f0f0;
-}
+    .column-row:hover {
+        background: #f0f0f0;
+    }
 
 .column-connector {
     width: 12px;
@@ -153,26 +151,26 @@
     transition: all 0.2s;
 }
 
-.column-connector.left {
-    position: absolute;
-    left: -16px;
-}
+    .column-connector.left {
+        position: absolute;
+        left: -16px;
+    }
 
-.column-connector.right {
-    position: absolute;
-    right: -16px;
-}
+    .column-connector.right {
+        position: absolute;
+        right: -16px;
+    }
 
-.column-connector:hover {
-    background: #0d6efd;
-    border-color: #0d6efd;
-    transform: scale(1.3);
-}
+    .column-connector:hover {
+        background: #0d6efd;
+        border-color: #0d6efd;
+        transform: scale(1.3);
+    }
 
-.column-connector.connected {
-    background: #28a745;
-    border-color: #28a745;
-}
+    .column-connector.connected {
+        background: #28a745;
+        border-color: #28a745;
+    }
 
 .column-name {
     margin: 0 8px;
@@ -199,12 +197,12 @@
     overflow: auto;
 }
 
-.sql-preview pre {
-    background: #f8f9fa;
-    padding: 10px;
-    border-radius: 4px;
-    font-size: 12px;
-}
+    .sql-preview pre {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        font-size: 12px;
+    }
 
 .properties-panel,
 .validation-panel {
@@ -244,7 +242,33 @@
         transition: right 0.3s;
     }
 
-    .sidebar.open {
-        right: 0;
-    }
+        .sidebar.open {
+            right: 0;
+        }
+}
+
+
+/* In your wwwroot/css/app.css file */
+
+.context-menu {
+    position: absolute;
+    z-index: 1000;
+    list-style: none;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
+    padding: 5px 0;
+    margin: 0;
+    display: none; /* Hidden by default */
+}
+
+.context-menu li {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+}
+
+.context-menu li:hover {
+    background-color: #f0f0f0;
 }

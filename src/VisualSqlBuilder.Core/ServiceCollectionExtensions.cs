@@ -10,7 +10,17 @@ namespace VisualSqlBuilder.Core
             // Register all core services here
             services.Configure(configureOpenAI);
 
-            services.AddScoped<IAzureOpenAIService, AzureOpenAIService>();
+
+            //if (!string.IsNullOrEmpty(configureOpenAI.openAIEndpoint) && !string.IsNullOrEmpty(openAIKey))
+            //{
+            //    services.AddScoped<IAzureOpenAIService, AzureOpenAIService>();
+            //}
+            //else
+            //{
+            services.AddScoped<IAzureOpenAIService, NullAzureOpenAIService>();
+            //}
+
+
             services.AddScoped<ILayoutStorageService, LayoutStorageService>();
             services.AddScoped<ISchemaService, SchemaService>();
             services.AddScoped<ISqlGeneratorService, SqlGeneratorService>();

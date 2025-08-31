@@ -1,0 +1,103 @@
+﻿@page "/history"
+@using Microsoft.AspNetCore.Components.Web
+
+<PageTitle>Query History</PageTitle>
+
+<div class="container-fluid">
+    <h3>Query History</h3>
+    
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Query</th>
+                                    <th>Duration</th>
+                                    <th>Rows</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var query in _queryHistory)
+                                {
+                                    <tr>
+                                        <td>@query.Timestamp.ToString("g")</td>
+                                        <td>
+                                            <code class="text-truncate d-inline-block" style="max-width: 400px;">
+                                                @query.SqlQuery
+                                            </code>
+                                        </td>
+                                        <td>@query.Duration ms</td>
+                                        <td>@query.RowCount</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-primary" @onclick="() => RerunQuery(query)">
+                                                Rerun
+                                            </button>
+                                            <button class="btn btn-sm btn-info" @onclick="() => EditQuery(query)">
+                                                Edit
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<QueryHistoryItem> _queryHistory = new();
+
+    protected override void OnInitialized()
+    {
+        // Load from localStorage or database
+        LoadQueryHistory();
+    }
+
+    private void LoadQueryHistory()
+    {
+        // Sample data
+        _queryHistory = new List<QueryHistoryItem>
+        {
+            new QueryHistoryItem
+            {
+                Timestamp = DateTime.Now.AddHours(-1),
+                SqlQuery = "SELECT * FROM Customers c INNER JOIN Orders o ON c.Id = o.CustomerId",
+                Duration = 125,
+                RowCount = 42
+            },
+            new QueryHistoryItem
+            {
+                Timestamp = DateTime.Now.AddHours(-2),
+                SqlQuery = "SELECT ProductName, SUM(Quantity) FROM Products GROUP BY ProductName",
+                Duration = 89,
+                RowCount = 15
+            }
+        };
+    }
+
+    private void RerunQuery(QueryHistoryItem query)
+    {
+        // Navigate to builder with query
+    }
+
+    private void EditQuery(QueryHistoryItem query)
+    {
+        // Navigate to builder with query for editing
+    }
+
+    public class QueryHistoryItem
+    {
+        public DateTime Timestamp { get; set; }
+        public string SqlQuery { get; set; } = string.Empty;
+        public int Duration { get; set; }
+        public int RowCount { get; set; }
+    }
+}

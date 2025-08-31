@@ -1,0 +1,151 @@
+﻿@page "/"
+
+@using VisualSqlBuilder.Core.Components
+@using VisualSqlBuilder.Core.Services
+@using Microsoft.JSInterop
+
+@inject IConfiguration Configuration
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Visual SQL Query Builder</PageTitle>
+
+<div class="container-fluid p-0" style="height: 100vh;">
+    @if (_showWelcome)
+    {
+        <div class="welcome-screen">
+            <div class="text-center">
+                <h1 class="display-4 mb-4">
+                    <i class="bi bi-diagram-3 text-primary"></i> Visual SQL Query Builder
+                </h1>
+                <p class="lead mb-4">Build complex SQL queries with an intuitive drag-and-drop interface</p>
+                
+                <div class="row justify-content-center mb-4">
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Quick Start Options</h5>
+                                <div class="d-grid gap-2">
+                                    <button type="button" class="btn btn-primary btn-lg" @onclick="@(() => StartWithSampleDatabase())">
+                                        <i class="bi bi-database-fill-gear"></i> Start with Sample Database
+                                    </button>
+                                    <button type="button" class="btn btn-success btn-lg" @onclick="@(() => StartEmpty())">
+                                        <i class="bi bi-plus-circle"></i> Start with Empty Canvas
+                                    </button>
+                                    <button type="button" class="btn btn-info btn-lg" @onclick="@(() => LoadPreviousSession())">
+                                        <i class="bi bi-clock-history"></i> Load Previous Session
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row justify-content-center">
+                    <div class="col-md-3">
+                        <div class="feature-box">
+                            <i class="bi bi-arrows-move feature-icon"></i>
+                            <h6>Drag & Drop</h6>
+                            <small>Intuitive table manipulation</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="feature-box">
+                            <i class="bi bi-link-45deg feature-icon"></i>
+                            <h6>Visual Relationships</h6>
+                            <small>Connect tables easily</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="feature-box">
+                            <i class="bi bi-code-slash feature-icon"></i>
+                            <h6>Live SQL Preview</h6>
+                            <small>See generated queries</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="feature-box">
+                            <i class="bi bi-save feature-icon"></i>
+                            <h6>Save Layouts</h6>
+                            <small>Reuse your designs</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <SqlQueryBuilder @ref="_sqlBuilder" />
+    }
+</div>
+
+<style>
+    .welcome-screen {
+        padding: 60px 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .feature-box {
+        text-align: center;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        margin: 10px;
+    }
+    
+    .feature-icon {
+        font-size: 2rem;
+        display: block;
+        margin-bottom: 10px;
+    }
+    
+    .card {
+        background: rgba(255, 255, 255, 0.95);
+        color: #333;
+    }
+</style>
+
+@code {
+    private bool _showWelcome = true;
+    private SqlQueryBuilder? _sqlBuilder;
+
+    protected override void OnInitialized()
+    {
+        Console.WriteLine("Index page initialized");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Console.WriteLine("Index page first render complete");
+            await Task.CompletedTask;
+        }
+    }
+
+    private void StartWithSampleDatabase()
+    {
+        Console.WriteLine("StartWithSampleDatabase clicked");
+        _showWelcome = false;
+        StateHasChanged();
+    }
+
+    private void StartEmpty()
+    {
+        Console.WriteLine("StartEmpty clicked");
+        _showWelcome = false;
+        StateHasChanged();
+    }
+
+    private void LoadPreviousSession()
+    {
+        Console.WriteLine("LoadPreviousSession clicked");
+        _showWelcome = false;
+        StateHasChanged();
+    }
+}

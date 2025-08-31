@@ -1,0 +1,43 @@
+﻿@page
+@model VisualSqlBuilder.Demo.Pages.ErrorModel
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Error - Visual SQL Builder</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h1 class="text-danger">Error</h1>
+                        <h2 class="text-danger">An error occurred while processing your request.</h2>
+
+                        @if (Model.ShowRequestId)
+                        {
+                            <p>
+                                <strong>Request ID:</strong> <code>@Model.RequestId</code>
+                            </p>
+                        }
+
+                        <h3>Development Mode</h3>
+                        <p>
+                            Swapping to the <strong>Development</strong> environment displays detailed information about the error that occurred.
+                        </p>
+                        <p>
+                            <strong>The Development environment shouldn't be enabled for deployed applications.</strong>
+                        </p>
+
+                        <a href="/" class="btn btn-primary">Go Home</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

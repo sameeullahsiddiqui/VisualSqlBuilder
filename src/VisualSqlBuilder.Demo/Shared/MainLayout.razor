@@ -1,0 +1,52 @@
+﻿@inherits LayoutComponentBase
+
+<div class="page">
+    <div class="sidebar @(_sidebarCollapsed ? "collapsed" : "")">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <button class="btn btn-link" @onclick="ToggleSidebar">
+                <i class="bi @(_sidebarCollapsed ? "bi-list" : "bi-x-lg")"></i>
+            </button>
+            <a href="https://github.com/yourusername/visualsqlbuilder" target="_blank">About</a>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<style>
+    .sidebar {
+        transition: margin-left 0.3s;
+    }
+    
+    .sidebar.collapsed {
+        margin-left: -250px;
+    }
+    
+    .top-row {
+        background-color: #f7f7f7;
+        border-bottom: 1px solid #d6d5d5;
+        justify-content: space-between;
+        height: 3.5rem;
+        display: flex;
+        align-items: center;
+    }
+    
+    .content {
+        padding-top: 0 !important;
+    }
+</style>
+
+@code {
+    private bool _sidebarCollapsed = true;
+
+    private void ToggleSidebar()
+    {
+        _sidebarCollapsed = !_sidebarCollapsed;
+    }
+}
