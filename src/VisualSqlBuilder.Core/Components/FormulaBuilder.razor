@@ -1,0 +1,175 @@
+@namespace VisualSqlBuilder.Core.Components
+@* @using VisualSqlBuilder.Core.Models *@
+
+<div class="formula-builder">
+    <div class="modal fade" id="formulaModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Formula Builder</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label class="form-label">Formula Expression:</label>
+                                <textarea class="form-control formula-editor" @bind="Formula" rows="4"></textarea>
+                            </div>
+
+                            <div class="formula-preview">
+                                <label class="form-label">Preview:</label>
+                                <pre class="border p-2 bg-light">@Formula</pre>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="formula-palette">
+                                <h6>Functions</h6>
+                                <div class="function-category">
+                                    <strong>Math</strong>
+                                    <div class="function-list">
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("SUM"))">SUM</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("AVG"))">AVG</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("COUNT"))">COUNT</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("MIN"))">MIN</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("MAX"))">MAX</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("ROUND"))">ROUND</button>
+                                    </div>
+                                </div>
+
+                                <div class="function-category mt-3">
+                                    <strong>String</strong>
+                                    <div class="function-list">
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("CONCAT"))">CONCAT</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("SUBSTRING"))">SUBSTRING</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("UPPER"))">UPPER</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("LOWER"))">LOWER</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("TRIM"))">TRIM</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("LEN"))">LEN</button>
+                                    </div>
+                                </div>
+
+                                <div class="function-category mt-3">
+                                    <strong>Date</strong>
+                                    <div class="function-list">
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("GETDATE"))">GETDATE</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("DATEADD"))">DATEADD</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("DATEDIFF"))">DATEDIFF</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("YEAR"))">YEAR</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("MONTH"))">MONTH</button>
+                                        <button class="btn btn-sm btn-outline-primary m-1" @onclick="@(() => InsertFunction("DAY"))">DAY</button>
+                                    </div>
+                                </div>
+
+                                <div class="function-category mt-3">
+                                    <strong>Operators</strong>
+                                    <div class="function-list">
+                                        <button class="btn btn-sm btn-outline-secondary m-1" @onclick="@(() => InsertOperator("+"))">+</button>
+                                        <button class="btn btn-sm btn-outline-secondary m-1" @onclick="@(() => InsertOperator("-"))">-</button>
+                                        <button class="btn btn-sm btn-outline-secondary m-1" @onclick="@(() => InsertOperator("*"))">*</button>
+                                        <button class="btn btn-sm btn-outline-secondary m-1" @onclick="@(() => InsertOperator("/"))">/</button>
+                                        <button class="btn btn-sm btn-outline-secondary m-1" @onclick="@(() => InsertOperator("="))">=</button>
+                                        <button class="btn btn-sm btn-outline-secondary m-1" @onclick="@(() => InsertOperator("()"))">( )</button>
+                                    </div>
+                                </div>
+
+                                <div class="function-category mt-3">
+                                    <strong>Available Columns</strong>
+                                    <div class="column-list">
+                                        @if (AvailableColumns != null)
+                                        {
+                                            @foreach (var col in AvailableColumns)
+                                            {
+                                                <button class="btn btn-sm btn-outline-info m-1" @onclick="() => InsertColumn(col)">
+                                                    @col
+                                                </button>
+                                            }
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ApplyFormula">Apply Formula</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Formula { get; set; } = string.Empty;
+    [Parameter] public List<string>? AvailableColumns { get; set; }
+    [Parameter] public EventCallback<string> OnFormulaApplied { get; set; }
+
+    private void InsertFunction(string function)
+    {
+        Formula += function switch
+        {
+            "SUM" => "SUM()",
+            "AVG" => "AVG()",
+            "COUNT" => "COUNT()",
+            "MIN" => "MIN()",
+            "MAX" => "MAX()",
+            "ROUND" => "ROUND(, 2)",
+            "CONCAT" => "CONCAT(, )",
+            "SUBSTRING" => "SUBSTRING(, 1, 10)",
+            "UPPER" => "UPPER()",
+            "LOWER" => "LOWER()",
+            "TRIM" => "TRIM()",
+            "LEN" => "LEN()",
+            "GETDATE" => "GETDATE()",
+            "DATEADD" => "DATEADD(day, , )",
+            "DATEDIFF" => "DATEDIFF(day, , )",
+            "YEAR" => "YEAR()",
+            "MONTH" => "MONTH()",
+            "DAY" => "DAY()",
+            _ => function + "()"
+        };
+    }
+
+    private void InsertOperator(string op)
+    {
+        if (op == "()")
+        {
+            Formula += "()";
+        }
+        else
+        {
+            Formula += " " + op + " ";
+        }
+    }
+
+    private void InsertColumn(string columnName)
+    {
+        Formula += "[" + columnName + "]";
+    }
+
+    private async Task ApplyFormula()
+    {
+        await OnFormulaApplied.InvokeAsync(Formula);
+    }
+}
+
+<style>
+    .formula-builder .formula-editor {
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+    }
+
+    .formula-builder .function-list,
+    .formula-builder .column-list {
+        max-height: 150px;
+        overflow-y: auto;
+    }
+
+    .formula-builder .function-category {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 8px;
+    }
+</style>

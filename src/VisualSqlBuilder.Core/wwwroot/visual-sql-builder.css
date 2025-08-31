@@ -1,0 +1,250 @@
+.visual-sql-builder {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: #f5f5f5;
+}
+
+.toolbar {
+    background: white;
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+}
+
+.main-container {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+.canvas-container {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    background: #fafafa;
+    background-image:
+        linear-gradient(rgba(0, 0, 0, .05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 0, 0, .05) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+.relationship-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.relationship-line {
+    cursor: pointer;
+    pointer-events: stroke;
+    transition: stroke-width 0.2s;
+}
+
+.relationship-line:hover {
+    stroke-width: 4;
+}
+
+.relationship-line.primary {
+    stroke: #dc3545;
+}
+
+.relationship-line.secondary {
+    stroke: #0d6efd;
+}
+
+.cardinality-label {
+    font-size: 12px;
+    fill: #666;
+    pointer-events: none;
+}
+
+.domain-container {
+    position: absolute;
+    border: 2px dashed #999;
+    border-radius: 8px;
+    opacity: 0.3;
+    z-index: 0;
+}
+
+.domain-container.collapsed {
+    height: 40px !important;
+}
+
+.domain-header {
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.domain-name {
+    font-weight: bold;
+    color: #333;
+}
+
+.table-card {
+    position: absolute;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+    min-width: 200px;
+    min-height: 150px;
+}
+
+.table-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.table-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 8px;
+    border-radius: 4px 4px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move;
+}
+
+.table-name {
+    font-weight: bold;
+}
+
+.table-alias {
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+.table-body {
+    padding: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.column-row {
+    display: flex;
+    align-items: center;
+    padding: 4px 0;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.column-row:hover {
+    background: #f0f0f0;
+}
+
+.column-connector {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ddd;
+    border: 2px solid #999;
+    cursor: crosshair;
+    transition: all 0.2s;
+}
+
+.column-connector.left {
+    position: absolute;
+    left: -16px;
+}
+
+.column-connector.right {
+    position: absolute;
+    right: -16px;
+}
+
+.column-connector:hover {
+    background: #0d6efd;
+    border-color: #0d6efd;
+    transform: scale(1.3);
+}
+
+.column-connector.connected {
+    background: #28a745;
+    border-color: #28a745;
+}
+
+.column-name {
+    margin: 0 8px;
+    flex: 1;
+}
+
+.column-type {
+    font-size: 0.85em;
+    color: #666;
+    margin-left: auto;
+}
+
+.sidebar {
+    width: 400px;
+    background: white;
+    border-left: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+}
+
+.sql-preview {
+    padding: 15px;
+    height: 100%;
+    overflow: auto;
+}
+
+.sql-preview pre {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.properties-panel,
+.validation-panel {
+    padding: 15px;
+}
+
+.validation-rule {
+    border: 1px solid #ddd;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+}
+
+.query-results {
+    background: white;
+    border-top: 1px solid #ddd;
+    padding: 15px;
+    max-height: 300px;
+    overflow: auto;
+}
+
+/* Drag and drop styles */
+.dragging {
+    opacity: 0.5;
+}
+
+.drag-over {
+    border: 2px dashed #0d6efd;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .sidebar {
+        width: 100%;
+        position: absolute;
+        right: -100%;
+        transition: right 0.3s;
+    }
+
+    .sidebar.open {
+        right: 0;
+    }
+}

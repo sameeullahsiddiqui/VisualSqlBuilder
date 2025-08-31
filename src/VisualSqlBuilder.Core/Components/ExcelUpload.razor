@@ -1,0 +1,179 @@
+@namespace VisualSqlBuilder.Core.Components
+@using Microsoft.AspNetCore.Components.Forms
+@using global::VisualSqlBuilder.Core.Services
+
+@* @using VisualSqlBuilder.Core.Models
+@using VisualSqlBuilder.Core.Services
+ *@
+
+@inject ISchemaService SchemaService
+@inject IAzureOpenAIService? OpenAIService
+
+<div class="excel-upload">
+    <div class="modal fade" id="excelUploadModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Upload Excel File</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Select Excel File:</label>
+                        <InputFile OnChange="@HandleFileSelected" accept=".xlsx,.xls" class="form-control" />
+                    </div>
+
+                    @if (_isProcessing)
+                    {
+                        <div class="alert alert-info">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                            Processing Excel file...
+                        </div>
+                    }
+
+                    @if (_uploadedTables.Any())
+                    {
+                        <div class="mb-3">
+                            <h6>Detected Sheets/Tables:</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Sheet Name</th>
+                                            <th>Columns</th>
+                                            <th>Import</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var table in _uploadedTables)
+                                        {
+                                            <tr>
+                                                <td>@table.Name</td>
+                                                <td>@table.Columns.Count columns</td>
+                                                <td>
+                                                    <input type="checkbox" @bind="_selectedTables[table.Id]" />
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        @if (OpenAIService != null)
+                        {
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" @bind="_useAI" id="useAI">
+                                    <label class="form-check-label" for="useAI">
+                                        Use AI to suggest relationships
+                                    </label>
+                                </div>
+                            </div>
+                        }
+                    }
+
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div class="alert alert-danger">@_errorMessage</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ImportTables"
+                        disabled="@(!_uploadedTables.Any() || _isProcessing)">
+                        Import Selected Tables
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<List<Models.TableModel>> OnTablesImported { get; set; }
+    [Parameter] public EventCallback<List<Models.RelationshipModel>> OnRelationshipsSuggested { get; set; }
+
+    private List<Models.TableModel> _uploadedTables = new();
+    private Dictionary<string, bool> _selectedTables = new();
+    private bool _isProcessing = false;
+    private bool _useAI = true;
+    private string _errorMessage = string.Empty;
+    private const long MaxFileSize = 10 * 1024 * 1024; // 10MB
+
+    protected override void OnInitialized()
+    {
+        // foreach (var table in SchemaService.GetTables())
+        // {
+        //     _selectedTables[table.Id] = true; // default checked
+        // }
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        _errorMessage = string.Empty;
+        _uploadedTables.Clear();
+        _selectedTables.Clear();
+
+        if (e.File.Size > MaxFileSize)
+        {
+            _errorMessage = "File size exceeds 10MB limit.";
+            return;
+        }
+
+        _isProcessing = true;
+
+        try
+        {
+            using var stream = e.File.OpenReadStream(MaxFileSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+
+            _uploadedTables = await SchemaService.LoadTablesFromExcelAsync(ms);
+
+            foreach (var table in _uploadedTables)
+            {
+                _selectedTables[table.Id] = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error processing file: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessing = false;
+        }
+    }
+
+    private async Task ImportTables()
+    {
+        var selectedTablesList = _uploadedTables
+        .Where(t => _selectedTables.ContainsKey(t.Id) && _selectedTables[t.Id])
+        .ToList();
+
+        if (selectedTablesList.Any())
+        {
+            await OnTablesImported.InvokeAsync(selectedTablesList);
+
+            if (_useAI && OpenAIService != null)
+            {
+                _isProcessing = true;
+                try
+                {
+                    var relationships = await OpenAIService.SuggestRelationshipsAsync(selectedTablesList);
+                    await OnRelationshipsSuggested.InvokeAsync(relationships);
+                }
+                catch (Exception ex)
+                {
+                    _errorMessage = $"AI suggestion error: {ex.Message}";
+                }
+                finally
+                {
+                    _isProcessing = false;
+                }
+            }
+        }
+    }
+}

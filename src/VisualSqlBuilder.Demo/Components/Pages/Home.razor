@@ -1,0 +1,22 @@
+﻿
+@page "/"
+
+@using VisualSqlBuilder.Core.Components
+
+<PageTitle>Home</PageTitle>
+
+<h1>Hello, world!</h1>
+
+Welcome to your new app.
+
+<VisualSqlBuilder ConnectionString="@connStr" OnQueryGenerated="@HandleQuery" />
+
+@code {
+    private string connStr = "Server=.;Database=deals_db;Trusted_Connection=True;";
+
+    private Task HandleQuery(string sql)
+    {
+        Console.WriteLine($"Generated SQL: {sql}");
+        return Task.CompletedTask;
+    }
+}
