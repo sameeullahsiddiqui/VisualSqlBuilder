@@ -169,7 +169,7 @@ public class AzureOpenAIService : IAzureOpenAIService
                                     SourceColumnId = sourceCol.Id,
                                     TargetTableId = targetTable.Id,
                                     TargetColumnId = targetCol.Id,
-                                    JoinType = JoinType.Inner,
+                                    JoinType = JoinType.InnerJoin,
                                     Type = RelationshipType.Secondary
                                 });
                             }

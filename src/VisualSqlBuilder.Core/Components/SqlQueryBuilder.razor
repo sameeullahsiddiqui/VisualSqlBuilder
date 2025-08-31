@@ -48,8 +48,14 @@
         </div>
     </div>
 
+    <!-- Context Menus -->
     <ul id="rename-table-menu" class="context-menu">
         <li data-action="rename">Rename Table</li>
+    </ul>
+
+    <ul id="relationship-context-menu" class="context-menu">
+        <li data-action="edit-join"><i class="bi bi-arrow-left-right"></i> Edit Join Type</li>
+        <li data-action="delete-relationship"><i class="bi bi-trash"></i> Delete Relationship</li>
     </ul>
     
     <div class="main-container">
@@ -70,24 +76,40 @@
                         
                         if (sourceCol != null && targetCol != null)
                         {
-                            var color = relationship.Type == RelationshipType.Primary ? "red" : "blue";
+                            var color = GetJoinTypeColor(relationship.JoinType);
+                            var strokeWidth = relationship.JoinType == JoinType.InnerJoin ? "3" : "2";
+                            var dashArray = GetJoinTypeDashArray(relationship.JoinType);
+                            
                             var sourceY = sourceTable.Position.Y + 40 + (sourceTable.Columns.IndexOf(sourceCol) * 30);
                             var targetY = targetTable.Position.Y + 40 + (targetTable.Columns.IndexOf(targetCol) * 30);
                             
-                            <line class="relationship-line @(relationship.Type.ToString().ToLower())"
+                            <line class="relationship-line @(relationship.JoinType.ToString().ToLower())"
                                   x1="@(sourceTable.Position.X + sourceTable.Size.Width)"
                                   y1="@sourceY"
                                   x2="@targetTable.Position.X"
                                   y2="@targetY"
                                   stroke="@color"
-                                  stroke-width="2"
+                                  stroke-width="@strokeWidth"
+                                  stroke-dasharray="@dashArray"
                                   @onclick="() => EditRelationship(relationship)"
-                                  data-relationship-id="@relationship.Id" />
+                                  data-relationship-id="@relationship.Id"
+                                  style="cursor: pointer;" />
+                            
+                            <!-- Join type label -->
+                            <svg:text x="@((sourceTable.Position.X + targetTable.Position.X) / 2)"
+                                  y="@((sourceY + targetY) / 2 - 10)"
+                                  class="join-type-label"
+                                  text-anchor="middle"
+                                  style="font-size: 12px; fill: @color; font-weight: bold;">
+                                @GetJoinTypeDisplayName(relationship.JoinType)
+                            </svg:text>
                             
                             <!-- Cardinality label -->
                             <svg:text x="@((sourceTable.Position.X + targetTable.Position.X) / 2)"
-                                  y="@((sourceY + targetY) / 2 - 5)"
-                                  class="cardinality-label">
+                                  y="@((sourceY + targetY) / 2 + 5)"
+                                  class="cardinality-label"
+                                  text-anchor="middle"
+                                  style="font-size: 10px; fill: #666;">
                                 @relationship.Cardinality
                             </svg:text>
                         }
@@ -117,8 +139,8 @@
                      data-table-id="@table.Id"
                      style="left: @(table.Position.X)px; top: @(table.Position.Y)px; 
                             width: @(table.Size.Width)px; height: @(table.Size.Height)px;">
-                    <div class="table-header">
-                        <span class="table-name">@table.Name</span>
+                    <div class="table-card-header">
+                        <span class="table-card-header-text">@table.Name</span>
                         <span class="table-alias">(@table.Alias)</span>
                         <button class="btn btn-sm btn-link text-white" type="button" @onclick="() => RemoveTable(table)">
                             <i class="bi bi-x"></i>
@@ -130,12 +152,17 @@
                             <div class="column-row">
                                 <span class="column-connector left" 
                                       data-column-id="@column.Id"
-                                      data-table-id="@table.Id"></span>
+                                      data-table-id="@table.Id"
+                                      title="Drag to create relationship"></span>
                                 <input type="checkbox" @bind="column.IsSelected" />
                                 <span class="column-name">
                                     @if (column.IsPrimaryKey)
                                     {
                                         <i class="bi bi-key text-warning"></i>
+                                    }
+                                    @if (column.IsForeignKey)
+                                    {
+                                        <i class="bi bi-arrow-right text-info"></i>
                                     }
                                     @column.Name
                                 </span>
@@ -146,7 +173,8 @@
                                 }
                                 <span class="column-connector right" 
                                       data-column-id="@column.Id"
-                                      data-table-id="@table.Id"></span>
+                                      data-table-id="@table.Id"
+                                      title="Drag to create relationship"></span>
                             </div>
                         }
                         <button class="btn btn-sm btn-link" type="button" @onclick="() => AddColumn(table)">
@@ -157,10 +185,10 @@
             }
         </div>
 
-        @* The rename modal *@
+        <!-- Rename Table Modal -->
         @if (showRenameModal)
         {
-            <div class="modal fade show d-block" tabindex="-1" role="dialog">
+            <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
                 <div class="modal-dialog" role="document">
                     <div class="modal-content">
                         <div class="modal-header">
@@ -180,6 +208,89 @@
             </div>
         }
 
+        <!-- Join Type Selection Modal -->
+        @if (showJoinTypeModal)
+        {
+            <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog modal-lg" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-arrow-left-right"></i> 
+                                @(editingRelationshipId != null ? "Edit Relationship" : "Create Relationship")
+                            </h5>
+                            <button type="button" class="btn-close" @onclick="CloseJoinTypeModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Source Table</h6>
+                                    <div class="table-info">
+                                        <strong>@pendingRelationship?.SourceTableName</strong>
+                                        <br />
+                                        Column: @pendingRelationship?.SourceColumnName
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Target Table</h6>
+                                    <div class="table-info">
+                                        <strong>@pendingRelationship?.TargetTableName</strong>
+                                        <br />
+                                        Column: @pendingRelationship?.TargetColumnName
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <hr />
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Join Type:</label>
+                                <div class="join-type-selection">
+                                    @foreach (var joinType in Enum.GetValues<JoinType>())
+                                    {
+                                        <div class="form-check join-type-option">
+                                            <input class="form-check-input" type="radio" 
+                                                   name="joinType" 
+                                                   id="join_@joinType" 
+                                                   value="@joinType"
+                                                   @onchange="@((e) => selectedJoinType = (JoinType)Enum.Parse(typeof(JoinType), e.Value.ToString()))"
+                                                   checked="@(selectedJoinType == joinType)" />
+                                            <label class="form-check-label" for="join_@joinType">
+                                                <strong style="color: @GetJoinTypeColor(joinType);">@GetJoinTypeDisplayName(joinType)</strong>
+                                                <br />
+                                                <small class="text-muted">@GetJoinTypeDescription(joinType)</small>
+                                            </label>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Cardinality:</label>
+                                <select class="form-select" @bind="selectedCardinality">
+                                    <option value="1:1">One-to-One (1:1)</option>
+                                    <option value="1:N">One-to-Many (1:N)</option>
+                                    <option value="N:1">Many-to-One (N:1)</option>
+                                    <option value="N:N">Many-to-Many (N:N)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Relationship Name (Optional):</label>
+                                <input type="text" class="form-control" @bind="relationshipName" 
+                                       placeholder="e.g., CustomerOrders, UserRoles" />
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseJoinTypeModal">Cancel</button>
+                            <button type="button" class="btn btn-primary" @onclick="ConfirmRelationship">
+                                @(editingRelationshipId != null ? "Update Relationship" : "Create Relationship")
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
 
         <div class="sidebar">
             <ul class="nav nav-tabs" role="tablist">
@@ -285,7 +396,7 @@
         </div>
     }
 
-    <!-- Connection Modal (Bootstrap Modal) -->
+    <!-- Connection Modal -->
     @if (_showConnectionModal)
     {
         <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
@@ -337,17 +448,17 @@
                         <button type="button" class="btn-close" @onclick="CloseExcelDialog"></button>
                     </div>
                     <div class="modal-body">
-                        @* <ExcelUpload OnTablesImported="HandleExcelTablesImported" OnRelationshipsSuggested="HandleRelationshipsSuggested" /> *@                    
+                        <!-- ExcelUpload component would go here -->                    
                     </div>
                 </div>
             </div>
         </div>
     }
+
 </div>
 
 @code {
     private QueryModel _queryModel = new();
-    //private string _connectionString = "";
     private string _generatedSql = "";
     private TableModel? _selectedTable;
     private List<ValidationRule> _validationRules = new();
@@ -371,21 +482,38 @@
     // JavaScript module
     private IJSObjectReference? _jsModule;
     
-    // State for the rename modal
+    // Rename modal state
     private bool showRenameModal = false;
-    private string currentTableIdForRename;
-    private string newTableName;
+    private string currentTableIdForRename = "";
+    private string newTableName = "";
 
-    // This is the C# object reference that JavaScript will use
-    private DotNetObjectReference<SqlQueryBuilder> dotNetHelper;
+    // Join type modal state
+    private bool showJoinTypeModal = false;
+    private PendingRelationship? pendingRelationship;
+    private JoinType selectedJoinType = JoinType.InnerJoin;
+    private string selectedCardinality = "1:N";
+    private string relationshipName = "";
+    private string? editingRelationshipId = null;
 
+    // DotNet object reference for JavaScript interop
+    private DotNetObjectReference<SqlQueryBuilder> dotNetHelper = null!;
+
+    // Pending relationship model
+    public class PendingRelationship
+    {
+        public string SourceTableId { get; set; } = "";
+        public string SourceColumnId { get; set; } = "";
+        public string TargetTableId { get; set; } = "";
+        public string TargetColumnId { get; set; } = "";
+        public string SourceTableName { get; set; } = "";
+        public string SourceColumnName { get; set; } = "";
+        public string TargetTableName { get; set; } = "";
+        public string TargetColumnName { get; set; } = "";
+    }
 
     protected override async Task OnInitializedAsync()
     {
         Console.WriteLine("VisualSqlBuilder initialized");
-
-        // Initialize with default connection string if available
-        //_connectionString = "Server=(localdb)\\mssqllocaldb;Database=TestDB;Trusted_Connection=True;";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -394,14 +522,11 @@
         {
             try
             {
-                // Create the DotNetObjectReference instance
                 dotNetHelper = DotNetObjectReference.Create(this);
 
-                // Import the JavaScript module
                 _jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
                     "import", "./_content/VisualSqlBuilder.Core/visual-sql-builder.js");
                 
-                // Initialize canvas
                 await InitializeCanvas();                
                 await JSRuntime.InvokeVoidAsync("console.log", "Canvas initialization completed");
 
@@ -420,7 +545,7 @@
         {
             if (_jsModule != null)
             {
-                await _jsModule.InvokeVoidAsync("initializeSqlCanvas", canvasElement);                        
+                await _jsModule.InvokeVoidAsync("initializeSqlCanvas", canvasElement, dotNetHelper);                        
             }
         }
         catch (Exception ex)
@@ -430,7 +555,8 @@
         }
     }
 
-     [JSInvokable]
+    // JavaScript-invokable methods
+    [JSInvokable]
     public void ShowRenameModal(string tableId, string currentName)
     {
         currentTableIdForRename = tableId;
@@ -439,18 +565,107 @@
         StateHasChanged();
     }
 
+    [JSInvokable]
+    public void ShowJoinTypeSelection(string sourceTableId, string sourceColumnId, string targetTableId, string targetColumnId)
+    {
+        var sourceTable = _queryModel.Tables.FirstOrDefault(t => t.Id == sourceTableId);
+        var targetTable = _queryModel.Tables.FirstOrDefault(t => t.Id == targetTableId);
+        var sourceColumn = sourceTable?.Columns.FirstOrDefault(c => c.Id == sourceColumnId);
+        var targetColumn = targetTable?.Columns.FirstOrDefault(c => c.Id == targetColumnId);
+
+        if (sourceTable != null && targetTable != null && sourceColumn != null && targetColumn != null)
+        {
+            pendingRelationship = new PendingRelationship
+            {
+                SourceTableId = sourceTableId,
+                SourceColumnId = sourceColumnId,
+                TargetTableId = targetTableId,
+                TargetColumnId = targetColumnId,
+                SourceTableName = sourceTable.Name,
+                SourceColumnName = sourceColumn.Name,
+                TargetTableName = targetTable.Name,
+                TargetColumnName = targetColumn.Name
+            };
+
+            selectedJoinType = JoinType.InnerJoin;
+            selectedCardinality = "1:N";
+            relationshipName = $"{sourceTable.Name}_{targetTable.Name}";
+            editingRelationshipId = null;
+            showJoinTypeModal = true;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void ShowJoinTypeModal(string relationshipId)
+    {
+        var relationship = _queryModel.Relationships.FirstOrDefault(r => r.Id == relationshipId);
+        if (relationship != null)
+        {
+            var sourceTable = _queryModel.Tables.FirstOrDefault(t => t.Id == relationship.SourceTableId);
+            var targetTable = _queryModel.Tables.FirstOrDefault(t => t.Id == relationship.TargetTableId);
+            var sourceColumn = sourceTable?.Columns.FirstOrDefault(c => c.Id == relationship.SourceColumnId);
+            var targetColumn = targetTable?.Columns.FirstOrDefault(c => c.Id == relationship.TargetColumnId);
+
+            if (sourceTable != null && targetTable != null && sourceColumn != null && targetColumn != null)
+            {
+                pendingRelationship = new PendingRelationship
+                {
+                    SourceTableId = relationship.SourceTableId,
+                    SourceColumnId = relationship.SourceColumnId,
+                    TargetTableId = relationship.TargetTableId,
+                    TargetColumnId = relationship.TargetColumnId,
+                    SourceTableName = sourceTable.Name,
+                    SourceColumnName = sourceColumn.Name,
+                    TargetTableName = targetTable.Name,
+                    TargetColumnName = targetColumn.Name
+                };
+
+                selectedJoinType = relationship.JoinType;
+                selectedCardinality = relationship.Cardinality;
+                relationshipName = relationship.Name ?? "";
+                editingRelationshipId = relationshipId;
+                showJoinTypeModal = true;
+                StateHasChanged();
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void DeleteRelationship(string relationshipId)
+    {
+        var relationship = _queryModel.Relationships.FirstOrDefault(r => r.Id == relationshipId);
+        if (relationship != null)
+        {
+            _queryModel.Relationships.Remove(relationship);
+            UpdateSqlPreview();
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task UpdateTablePosition(string tableId, double x, double y)
+    {
+        var table = _queryModel.Tables.FirstOrDefault(t => t.Id == tableId);
+        if (table != null)
+        {
+            table.Position.X = (int)x;
+            table.Position.Y = (int)y;
+            UpdateSqlPreview();
+        }
+    }
+
+    // Modal event handlers
     private void HandleRenameSubmit()
     {
         if (!string.IsNullOrWhiteSpace(newTableName))
         {
-            // This is where you would update your data model.
-            // Example: Find the table by currentTableIdForRename and update its name
-            Console.WriteLine($"Renaming table {currentTableIdForRename} to {newTableName}");
-
-            // TODO: Call a service or state management function to persist the change.
-            // e.g. _tableService.RenameTable(currentTableIdForRename, newTableName);
-
-            // Hide the modal
+            var table = _queryModel.Tables.FirstOrDefault(t => t.Id == currentTableIdForRename);
+            if (table != null)
+            {
+                table.Name = newTableName;
+                UpdateSqlPreview();
+            }
             CloseRenameModal();
         }
     }
@@ -461,6 +676,106 @@
         StateHasChanged();
     }
 
+    private void ConfirmRelationship()
+    {
+        if (pendingRelationship != null)
+        {
+            if (editingRelationshipId != null)
+            {
+                // Update existing relationship
+                var existingRelationship = _queryModel.Relationships.FirstOrDefault(r => r.Id == editingRelationshipId);
+                if (existingRelationship != null)
+                {
+                    existingRelationship.JoinType = selectedJoinType;
+                    existingRelationship.Cardinality = selectedCardinality;
+                    existingRelationship.Name = string.IsNullOrWhiteSpace(relationshipName) ? null : relationshipName;
+                }
+            }
+            else
+            {
+                // Create new relationship
+                var newRelationship = new RelationshipModel
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    SourceTableId = pendingRelationship.SourceTableId,
+                    SourceColumnId = pendingRelationship.SourceColumnId,
+                    TargetTableId = pendingRelationship.TargetTableId,
+                    TargetColumnId = pendingRelationship.TargetColumnId,
+                    JoinType = selectedJoinType,
+                    Cardinality = selectedCardinality,
+                    Name = string.IsNullOrWhiteSpace(relationshipName) ? null : relationshipName
+                };
+
+                _queryModel.Relationships.Add(newRelationship);
+            }
+
+            UpdateSqlPreview();
+            CloseJoinTypeModal();
+        }
+    }
+
+    private void CloseJoinTypeModal()
+    {
+        showJoinTypeModal = false;
+        pendingRelationship = null;
+        editingRelationshipId = null;
+        StateHasChanged();
+    }
+
+    // Helper methods for join type display
+    private string GetJoinTypeColor(JoinType joinType)
+    {
+        return joinType switch
+        {
+            JoinType.InnerJoin => "#dc3545",
+            JoinType.LeftJoin => "#0d6efd",
+            JoinType.RightJoin => "#fd7e14",
+            JoinType.FullOuterJoin => "#6f42c1",
+            JoinType.CrossJoin => "#20c997",
+            _ => "#6c757d"
+        };
+    }
+
+    private string GetJoinTypeDashArray(JoinType joinType)
+    {
+        return joinType switch
+        {
+            JoinType.InnerJoin => "none",
+            JoinType.LeftJoin => "5,5",
+            JoinType.RightJoin => "10,5",
+            JoinType.FullOuterJoin => "15,5,5,5",
+            JoinType.CrossJoin => "2,2",
+            _ => "none"
+        };
+    }
+
+    private string GetJoinTypeDisplayName(JoinType joinType)
+    {
+        return joinType switch
+        {
+            JoinType.InnerJoin => "INNER",
+            JoinType.LeftJoin => "LEFT",
+            JoinType.RightJoin => "RIGHT",
+            JoinType.FullOuterJoin => "FULL",
+            JoinType.CrossJoin => "CROSS",
+            _ => joinType.ToString().ToUpper()
+        };
+    }
+
+    private string GetJoinTypeDescription(JoinType joinType)
+    {
+        return joinType switch
+        {
+            JoinType.InnerJoin => "Returns only matching records from both tables",
+            JoinType.LeftJoin => "Returns all records from left table and matching from right",
+            JoinType.RightJoin => "Returns all records from right table and matching from left",
+            JoinType.FullOuterJoin => "Returns all records from both tables",
+            JoinType.CrossJoin => "Returns cartesian product of both tables",
+            _ => ""
+        };
+    }
+
+    // Rest of the existing methods...
     private void ShowConnectionDialog()
     {
         Console.WriteLine("ShowConnectionDialog called");
@@ -476,7 +791,6 @@
         _isConnecting = false;
         StateHasChanged();
     }
-
 
     private void CloseExcelDialog()
     {
@@ -495,13 +809,11 @@
         var file = e.File;
         if (file != null)
         {
-            using var stream = file.OpenReadStream(maxAllowedSize: 10_000_000); // 10 MB limit
+            using var stream = file.OpenReadStream(maxAllowedSize: 10_000_000);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
 
             byte[] fileBytes = ms.ToArray();
-
-            // TODO: parse Excel (use ClosedXML or EPPlus if Core supports it)
             Console.WriteLine($"Uploaded {file.Name} with {fileBytes.Length} bytes");
         }
     }
@@ -531,13 +843,8 @@
             _queryModel.Tables.AddRange(tables);
             _queryModel.Relationships.AddRange(relationships);
             
-            // Position tables on canvas
             PositionTables();
-            
-            // Close modal
             CloseConnectionDialog();
-            
-            // Update SQL preview
             UpdateSqlPreview();
             
             Console.WriteLine($"Loaded {tables.Count} tables and {relationships.Count} relationships");
@@ -560,7 +867,6 @@
         PositionTables();
         CloseExcelDialog();
         UpdateSqlPreview();
-
         return Task.CompletedTask;
     }
 
@@ -568,7 +874,6 @@
     {
         _queryModel.Relationships.AddRange(relationships);
         StateHasChanged();
-
         return Task.CompletedTask;
     }
 
@@ -603,7 +908,6 @@
             Position = new Position { X = 100, Y = 100 }
         };
         
-        // Add default metadata columns
         newTable.Columns.Add(new ColumnModel { Name = "Id", DataType = "int", IsPrimaryKey = true });
         newTable.Columns.Add(new ColumnModel { Name = "CreatedBy", DataType = "nvarchar" });
         newTable.Columns.Add(new ColumnModel { Name = "CreatedAt", DataType = "datetime2" });
@@ -635,8 +939,7 @@
 
     private void EditRelationship(RelationshipModel relationship)
     {
-        // Open relationship editor
-        Console.WriteLine($"Edit relationship: {relationship.Id}");
+        ShowJoinTypeModal(relationship.Id);
     }
 
     private void ToggleDomain(DomainModel domain)
@@ -682,7 +985,6 @@
             {
                 _queryResults = await SchemaService.ExecuteQueryAsync(ConnectionString, _generatedSql, 100);
 
-                // notify parent
                 if (OnQueryGenerated.HasDelegate)
                     await OnQueryGenerated.InvokeAsync(_generatedSql);
 
@@ -764,166 +1066,10 @@
 
     public async ValueTask DisposeAsync()
     {
+        dotNetHelper?.Dispose();
         if (_jsModule != null)
         {
             await _jsModule.DisposeAsync();
         }
     }
 }
-
-
-@* ## 2. Test Connection Strings for Development
-Add these to your `appsettings.Development.json`:
-
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Debug",
-      "Microsoft.AspNetCore": "Warning"
-    }
-  },
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=TestDB;Trusted_Connection=True;MultipleActiveResultSets=true",
-    "SqlExpress": "Server=.\\SQLEXPRESS;Database=TestDB;Trusted_Connection=True;TrustServerCertificate=True;",
-    "DockerSql": "Server=localhost,1433;Database=TestDB;User Id=sa;Password=YourStrong@Password123;TrustServerCertificate=True;"
-  }
-}
-```
- *@
-
-@* ## 3. Debugging Tips
-
-### Add this test page to verify the component loads: `src/VisualSqlBuilder.Demo/Pages/Test.razor`
-```razor
-@page "/test"
-
-<h3>Component Test</h3>
-
-<button class="btn btn-primary" @onclick="TestClick">Test Button Click</button>
-
-<p>Click count: @_clickCount</p>
-
-@if (_showModal)
-{
-    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Test Modal</h5>
-                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
-                </div>
-                <div class="modal-body">
-                    Modal is working!
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
-@code {
-    private int _clickCount = 0;
-    private bool _showModal = false;
-
-    private void TestClick()
-    {
-        _clickCount++;
-        _showModal = true;
-        Console.WriteLine($"Button clicked {_clickCount} times");
-    }
-
-    private void CloseModal()
-    {
-        _showModal = false;
-    }
-}
-```
-
-## 4. Common Issues and Solutions
-
-### Issue 1: JavaScript not loading
-**Solution:** Ensure the JavaScript file is in the correct location and marked as content:
-
-In `VisualSqlBuilder.Core.csproj`, add:
-```xml
-<ItemGroup>
-  <Content Include="wwwroot\**\*" />
-</ItemGroup>
-```
-
-### Issue 2: Bootstrap not loading
-**Solution:** Check that Bootstrap is loaded in `_Layout.cshtml`:
-```html
-<!-- Ensure these are present -->
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-```
-
-### Issue 3: SignalR connection issues
-**Solution:** Check browser console for errors. Add logging:
-```csharp
-// In Program.cs
-builder.Services.AddSignalR(options =>
-{
-    options.EnableDetailedErrors = true;
-});
-
-builder.Logging.AddConsole();
-builder.Logging.SetMinimumLevel(LogLevel.Debug);
-```
-
-## 5. Simplified JavaScript (if module loading fails): `src/VisualSqlBuilder.Core/wwwroot/visual-sql-builder-simple.js`
-```javascript
-// Simplified version without module syntax
-window.visualSqlBuilder = {
-    initializeSqlCanvas: function(element) {
-        console.log('Canvas initialized', element);
-    },
-    
-    setCanvasZoom: function(zoom) {
-        console.log('Zoom set to', zoom);
-        const canvas = document.getElementById('sql-canvas');
-        if (canvas) {
-            canvas.style.transform = `scale(${zoom})`;
-        }
-    },
-    
-    saveToLocalStorage: function(key, value) {
-        localStorage.setItem(key, value);
-        console.log('Saved to localStorage', key);
-    },
-    
-    loadFromLocalStorage: function(key) {
-        const value = localStorage.getItem(key);
-        console.log('Loaded from localStorage', key);
-        return value;
-    }
-};
-```
-
-Then use it directly in the component:
-```csharp
-await JSRuntime.InvokeVoidAsync("visualSqlBuilder.initializeSqlCanvas", canvasElement);
-```
-
-## Key Changes Made:
-
-1. **Removed Bootstrap Modal JavaScript Dependency** - Using pure Blazor state management for modals
-2. **Added `type="button"` to all buttons** - Prevents form submission issues
-3. **Added proper error handling and logging**
-4. **Used `@onclick` instead of JavaScript for modal handling**
-5. **Added loading states and error messages**
-6. **Implemented `IAsyncDisposable` for proper cleanup**
-
-## To Debug:
-
-1. **Check Browser Console** for JavaScript errors
-2. **Add breakpoints** in the `ShowConnectionDialog` method
-3. **Check Network tab** to ensure all resources load
-4. **Verify SignalR connection** is established
-5. **Test with the `/test` page first** to ensure basic functionality works
-
-The connection dialog should now work properly with these fixes! *@

@@ -134,10 +134,10 @@ public class SqlGeneratorService : ISqlGeneratorService
     {
         return joinType switch
         {
-            JoinType.Inner => "INNER JOIN",
-            JoinType.Left => "LEFT JOIN",
-            JoinType.Right => "RIGHT JOIN",
-            JoinType.FullOuter => "FULL OUTER JOIN",
+            JoinType.InnerJoin => "INNER JOIN",
+            JoinType.LeftJoin => "LEFT JOIN",
+            JoinType.RightJoin => "RIGHT JOIN",
+            JoinType.FullOuterJoin => "FULL OUTER JOIN",
             _ => "INNER JOIN"
         };
     }

@@ -37,21 +37,24 @@ namespace VisualSqlBuilder.Core.Models
     public class RelationshipModel
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
+
+        public string Name { get; set; } = string.Empty;
         public string SourceTableId { get; set; } = string.Empty;
         public string SourceColumnId { get; set; } = string.Empty;
         public string TargetTableId { get; set; } = string.Empty;
         public string TargetColumnId { get; set; } = string.Empty;
-        public JoinType JoinType { get; set; } = JoinType.Inner;
+        public JoinType JoinType { get; set; } = JoinType.InnerJoin;
         public RelationshipType Type { get; set; } = RelationshipType.Secondary;
         public string? Cardinality { get; set; }
     }
 
     public enum JoinType
     {
-        Inner,
-        Left,
-        Right,
-        FullOuter
+        InnerJoin,
+        LeftJoin,
+        RightJoin,
+        FullOuterJoin,
+        CrossJoin
     }
 
     public enum RelationshipType
