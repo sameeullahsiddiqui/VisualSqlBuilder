@@ -559,6 +559,10 @@ export function loadFromLocalStorage(key) {
     return window.sqlBuilderInterop.loadFromLocalStorage(key);
 }
 
+export function refreshAllRelationshipLines() {
+    window.sqlBuilderInterop.refreshAllRelationshipLines();
+}
+
 export function autoArrangeTables() {
     window.sqlBuilderInterop.autoArrangeTables();
 }
@@ -571,3 +575,4 @@ window.hideModal = hideModal;
 window.saveToLocalStorage = saveToLocalStorage;
 window.loadFromLocalStorage = loadFromLocalStorage;
 window.autoArrangeTables = autoArrangeTables;
+window.refreshAllRelationshipLines = refreshAllRelationshipLines;

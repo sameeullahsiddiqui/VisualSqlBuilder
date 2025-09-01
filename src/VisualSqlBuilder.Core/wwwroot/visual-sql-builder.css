@@ -293,21 +293,24 @@
     height: 100%;
     pointer-events: none;
     z-index: 5;
+    overflow: visible;
 }
 
 .relationship-line {
     pointer-events: all;
     cursor: pointer;
-    transition: stroke-width 0.2s ease;
+    transition: stroke-width 0.15s ease, filter 0.15s ease;
+    vector-effect: non-scaling-stroke; /* Prevents line thickness scaling with zoom */
 }
 
     .relationship-line:hover {
         stroke-width: 4 !important;
-        filter: drop-shadow(0 0 3px rgba(0,0,0,0.3));
+        filter: drop-shadow(0 0 4px rgba(0,0,0,0.4));
     }
 
 .drag-line {
     animation: dash 1s linear infinite;
+    pointer-events: none;
 }
 
 @keyframes dash {
@@ -321,12 +324,42 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     dominant-baseline: middle;
     pointer-events: none;
+    user-select: none;
+    transition: all 0.2s ease;
 }
 
 .cardinality-label {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     dominant-baseline: middle;
     pointer-events: none;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+/* Improved relationship line rendering */
+.relationship-line.innerjoin {
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.relationship-line.leftjoin {
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.relationship-line.rightjoin {
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.relationship-line.fullouterjoin {
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.relationship-line.crossjoin {
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 /* Context Menus */
