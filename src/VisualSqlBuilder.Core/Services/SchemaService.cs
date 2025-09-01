@@ -137,7 +137,7 @@ public class SchemaService : ISchemaService
                         SourceColumnId = sourceCol.Id,
                         TargetTableId = targetTable.Id,
                         TargetColumnId = targetCol.Id,
-                        Type = targetCol.IsPrimaryKey ? RelationshipType.Primary : RelationshipType.Secondary,
+                        Type = targetCol.IsPrimaryKey ? RelationshipType.Primary : RelationshipType.Foreign,
                         JoinType = JoinType.InnerJoin,
                         Cardinality = targetCol.IsPrimaryKey ? "N:1" : "N:N"
                     });

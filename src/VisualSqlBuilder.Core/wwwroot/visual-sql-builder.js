@@ -94,13 +94,22 @@ window.sqlBuilderInterop = {
     setupContextMenu: function () {
         const contextMenu = document.getElementById('rename-table-menu');
         const relationshipContextMenu = document.getElementById('relationship-context-menu');
+        const columnContextMenu = document.getElementById('column-context-menu');
         let currentTableId = null;
         let currentRelationshipId = null;
+        let currentColumnId = null;
+        let currentColumnTableId = null;
 
-        // Table context menu
+        // Context menu handler
         this.canvasElement.addEventListener('contextmenu', (e) => {
             const tableHeader = e.target.closest('.table-card-header');
             const relationshipLine = e.target.closest('.relationship-line');
+            const columnName = e.target.closest('.column-name');
+
+            // Hide all context menus first
+            [contextMenu, relationshipContextMenu, columnContextMenu].forEach(menu => {
+                if (menu) menu.style.display = 'none';
+            });
 
             if (tableHeader) {
                 e.preventDefault();
@@ -108,7 +117,6 @@ window.sqlBuilderInterop = {
                 contextMenu.style.display = 'block';
                 contextMenu.style.left = `${e.clientX}px`;
                 contextMenu.style.top = `${e.clientY}px`;
-                if (relationshipContextMenu) relationshipContextMenu.style.display = 'none';
             } else if (relationshipLine) {
                 e.preventDefault();
                 currentRelationshipId = relationshipLine.getAttribute('data-relationship-id');
@@ -117,17 +125,24 @@ window.sqlBuilderInterop = {
                     relationshipContextMenu.style.left = `${e.clientX}px`;
                     relationshipContextMenu.style.top = `${e.clientY}px`;
                 }
-                contextMenu.style.display = 'none';
-            } else {
-                contextMenu.style.display = 'none';
-                if (relationshipContextMenu) relationshipContextMenu.style.display = 'none';
+            } else if (columnName) {
+                e.preventDefault();
+                const columnRow = columnName.closest('.column-row');
+                currentColumnId = columnRow.querySelector('.column-connector').getAttribute('data-column-id');
+                currentColumnTableId = columnRow.querySelector('.column-connector').getAttribute('data-table-id');
+                if (columnContextMenu) {
+                    columnContextMenu.style.display = 'block';
+                    columnContextMenu.style.left = `${e.clientX}px`;
+                    columnContextMenu.style.top = `${e.clientY}px`;
+                }
             }
         });
 
         // Hide context menus on click
         document.addEventListener('click', () => {
-            contextMenu.style.display = 'none';
-            if (relationshipContextMenu) relationshipContextMenu.style.display = 'none';
+            [contextMenu, relationshipContextMenu, columnContextMenu].forEach(menu => {
+                if (menu) menu.style.display = 'none';
+            });
         });
 
         // Handle table context menu actions
@@ -155,6 +170,30 @@ window.sqlBuilderInterop = {
                     }
                 }
             });
+        }
+
+        // Handle column context menu actions
+        if (columnContextMenu) {
+            columnContextMenu.addEventListener('click', (e) => {
+                const action = e.target.getAttribute('data-action');
+                if (currentColumnId && currentColumnTableId) {
+                    switch (action) {
+                        case 'set-alias':
+                            this.dotNetHelper.invokeMethodAsync('ShowColumnAliasModal', currentColumnTableId, currentColumnId);
+                            break;
+                        case 'toggle-select':
+                            this.dotNetHelper.invokeMethodAsync('ToggleColumnSelection', currentColumnTableId, currentColumnId);
+                            break;
+                    }
+                }
+            });
+        }
+    },
+
+    // Auto-layout tables in a clean arrangement
+    autoArrangeTables: function () {
+        if (this.dotNetHelper) {
+            this.dotNetHelper.invokeMethodAsync('AutoArrangeTables');
         }
     },
 
@@ -520,6 +559,10 @@ export function loadFromLocalStorage(key) {
     return window.sqlBuilderInterop.loadFromLocalStorage(key);
 }
 
+export function autoArrangeTables() {
+    window.sqlBuilderInterop.autoArrangeTables();
+}
+
 // Make functions available globally
 window.initializeSqlCanvas = initializeSqlCanvas;
 window.setCanvasZoom = setCanvasZoom;
@@ -527,3 +570,4 @@ window.showModal = showModal;
 window.hideModal = hideModal;
 window.saveToLocalStorage = saveToLocalStorage;
 window.loadFromLocalStorage = loadFromLocalStorage;
+window.autoArrangeTables = autoArrangeTables;

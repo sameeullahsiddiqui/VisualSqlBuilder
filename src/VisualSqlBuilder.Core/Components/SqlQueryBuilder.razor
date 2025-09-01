@@ -27,8 +27,11 @@
             <button class="btn btn-secondary" type="button" @onclick="LoadLayout">
                 <i class="bi bi-folder-open"></i> Load Layout
             </button>
+            <button class="btn btn-outline-info" type="button" @onclick="AutoArrangeTables">
+                <i class="bi bi-grid-3x3-gap"></i> Rearrange Layout
+            </button>
         </div>
-        
+
         <div class="btn-group ms-3" role="group">
             <button class="btn btn-outline-primary" type="button" @onclick="ZoomIn">
                 <i class="bi bi-zoom-in"></i>
@@ -40,8 +43,11 @@
                 <i class="bi bi-arrows-fullscreen"></i>
             </button>
         </div>
-        
+
         <div class="btn-group ms-3" role="group">
+            <button class="btn btn-success" type="button" @onclick="GenerateQuery">
+                <i class="bi bi-code-square"></i> Generate Query
+            </button>
             <button class="btn btn-success" type="button" @onclick="GenerateAndExecuteQuery">
                 <i class="bi bi-play-fill"></i> Execute Query
             </button>
@@ -57,32 +63,37 @@
         <li data-action="edit-join"><i class="bi bi-arrow-left-right"></i> Edit Join Type</li>
         <li data-action="delete-relationship"><i class="bi bi-trash"></i> Delete Relationship</li>
     </ul>
-    
+
+    <ul id="column-context-menu" class="context-menu">
+        <li data-action="set-alias"><i class="bi bi-tag"></i> Set Column Alias</li>
+        <li data-action="toggle-select"><i class="bi bi-check-square"></i> Toggle Selection</li>
+    </ul>
+
     <div class="main-container">
         <div class="canvas-container" @ref="canvasElement" id="sql-canvas">
-            
+
             <!-- SVG for relationship lines -->
             <svg class="relationship-layer">
-            
+
                 @foreach (var relationship in _queryModel.Relationships)
                 {
                     var sourceTable = _queryModel.Tables.FirstOrDefault(t => t.Id == relationship.SourceTableId);
                     var targetTable = _queryModel.Tables.FirstOrDefault(t => t.Id == relationship.TargetTableId);
-                    
+
                     if (sourceTable != null && targetTable != null)
                     {
                         var sourceCol = sourceTable.Columns.FirstOrDefault(c => c.Id == relationship.SourceColumnId);
                         var targetCol = targetTable.Columns.FirstOrDefault(c => c.Id == relationship.TargetColumnId);
-                        
+
                         if (sourceCol != null && targetCol != null)
                         {
                             var color = GetJoinTypeColor(relationship.JoinType);
                             var strokeWidth = relationship.JoinType == JoinType.InnerJoin ? "3" : "2";
                             var dashArray = GetJoinTypeDashArray(relationship.JoinType);
-                            
+
                             var sourceY = sourceTable.Position.Y + 40 + (sourceTable.Columns.IndexOf(sourceCol) * 30);
                             var targetY = targetTable.Position.Y + 40 + (targetTable.Columns.IndexOf(targetCol) * 30);
-                            
+
                             <line class="relationship-line @(relationship.JoinType.ToString().ToLower())"
                                   x1="@(sourceTable.Position.X + sourceTable.Size.Width)"
                                   y1="@sourceY"
@@ -91,25 +102,25 @@
                                   stroke="@color"
                                   stroke-width="@strokeWidth"
                                   stroke-dasharray="@dashArray"
-                                  @onclick="() => EditRelationship(relationship)"
+                                  @onclick="@(() => EditRelationship(relationship))"
                                   data-relationship-id="@relationship.Id"
                                   style="cursor: pointer;" />
-                            
+
                             <!-- Join type label -->
                             <svg:text x="@((sourceTable.Position.X + targetTable.Position.X) / 2)"
-                                  y="@((sourceY + targetY) / 2 - 10)"
-                                  class="join-type-label"
-                                  text-anchor="middle"
-                                  style="font-size: 12px; fill: @color; font-weight: bold;">
+                                      y="@((sourceY + targetY) / 2 - 10)"
+                                      class="join-type-label"
+                                      text-anchor="middle"
+                                      style="font-size: 12px; fill: @color; font-weight: bold;">
                                 @GetJoinTypeDisplayName(relationship.JoinType)
                             </svg:text>
-                            
+
                             <!-- Cardinality label -->
                             <svg:text x="@((sourceTable.Position.X + targetTable.Position.X) / 2)"
-                                  y="@((sourceY + targetY) / 2 + 5)"
-                                  class="cardinality-label"
-                                  text-anchor="middle"
-                                  style="font-size: 10px; fill: #666;">
+                                      y="@((sourceY + targetY) / 2 + 5)"
+                                      class="cardinality-label"
+                                      text-anchor="middle"
+                                      style="font-size: 10px; fill: #666;">
                                 @relationship.Cardinality
                             </svg:text>
                         }
@@ -121,8 +132,8 @@
             @foreach (var domain in _queryModel.Domains)
             {
                 <div class="domain-container @(domain.IsCollapsed ? "collapsed" : "")" style="left: @(domain.Position.X)px; top: @(domain.Position.Y)px;
-                                            width: @(domain.Size.Width)px; height: @(domain.Size.Height)px;
-                                            background-color: @domain.Color;">
+                                                        width: @(domain.Size.Width)px; height: @(domain.Size.Height)px;
+                                                        background-color: @domain.Color;">
                     <div class="domain-header">
                         <span class="domain-name">@domain.Name</span>
                         <button class="btn btn-sm btn-link" @onclick="() => ToggleDomain(domain)">
@@ -135,13 +146,16 @@
             <!-- Tables -->
             @foreach (var table in _queryModel.Tables)
             {
-                <div class="table-card" 
+                <div class="table-card"
                      data-table-id="@table.Id"
-                     style="left: @(table.Position.X)px; top: @(table.Position.Y)px; 
-                            width: @(table.Size.Width)px; height: @(table.Size.Height)px;">
+                     style="left: @(table.Position.X)px; top: @(table.Position.Y)px;
+                                        width: @(table.Size.Width)px; height: @(table.Size.Height)px;">
                     <div class="table-card-header">
                         <span class="table-card-header-text">@table.Name</span>
-                        <span class="table-alias">(@table.Alias)</span>
+                        @if (!string.IsNullOrEmpty(table.Alias) && table.Alias != table.Name)
+                        {
+                            <span class="table-alias">(@table.Alias)</span>
+                        }
                         <button class="btn btn-sm btn-link text-white" type="button" @onclick="() => RemoveTable(table)">
                             <i class="bi bi-x"></i>
                         </button>
@@ -150,12 +164,13 @@
                         @foreach (var column in table.Columns)
                         {
                             <div class="column-row">
-                                <span class="column-connector left" 
+                                <span class="column-connector left"
                                       data-column-id="@column.Id"
                                       data-table-id="@table.Id"
-                                      title="Drag to create relationship"></span>
-                                <input type="checkbox" @bind="column.IsSelected" />
-                                <span class="column-name">
+                                      title="Drag to create relationship">
+                                </span>
+                                <input type="checkbox" @bind="column.IsSelected" @bind:after="() => UpdateSqlPreview()" />
+                                <span class="column-name" title="Right-click for options">
                                     @if (column.IsPrimaryKey)
                                     {
                                         <i class="bi bi-key text-warning"></i>
@@ -164,26 +179,175 @@
                                     {
                                         <i class="bi bi-arrow-right text-info"></i>
                                     }
+                                    @if (column.IsComputed)
+                                    {
+                                        <i class="bi bi-calculator text-success"></i>
+                                    }
                                     @column.Name
+                                    @if (!string.IsNullOrEmpty(column.QueryAlias) && column.QueryAlias != column.Name)
+                                    {
+                                        <span class="column-alias">(@column.QueryAlias)</span>
+                                    }
                                 </span>
                                 <span class="column-type">@column.DataType</span>
                                 @if (column.Filter != null)
                                 {
                                     <i class="bi bi-funnel-fill text-info"></i>
                                 }
-                                <span class="column-connector right" 
+                                <span class="column-connector right"
                                       data-column-id="@column.Id"
                                       data-table-id="@table.Id"
                                       title="Drag to create relationship"></span>
                             </div>
                         }
-                        <button class="btn btn-sm btn-link" type="button" @onclick="() => AddColumn(table)">
+                        <button class="btn btn-sm btn-link" type="button" @onclick="() => ShowAddColumnModal(table)">
                             <i class="bi bi-plus"></i> Add Column
                         </button>
                     </div>
                 </div>
             }
         </div>
+
+        <!-- Add Column Modal -->
+        @if (showAddColumnModal)
+        {
+            <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog modal-lg" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-plus-circle"></i>
+                                Add Column to @selectedTableForColumn?.Name
+                            </h5>
+                            <button type="button" class="btn-close" @onclick="CloseAddColumnModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Column Name:</label>
+                                        <input type="text" class="form-control" @bind="newColumnName"
+                                               placeholder="Enter column name" />
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Data Type:</label>
+                                        <select class="form-select" @bind="newColumnDataType">
+                                            <option value="int">int</option>
+                                            <option value="bigint">bigint</option>
+                                            <option value="varchar">varchar</option>
+                                            <option value="nvarchar">nvarchar</option>
+                                            <option value="char">char</option>
+                                            <option value="nchar">nchar</option>
+                                            <option value="text">text</option>
+                                            <option value="ntext">ntext</option>
+                                            <option value="decimal">decimal</option>
+                                            <option value="float">float</option>
+                                            <option value="real">real</option>
+                                            <option value="money">money</option>
+                                            <option value="datetime">datetime</option>
+                                            <option value="datetime2">datetime2</option>
+                                            <option value="date">date</option>
+                                            <option value="time">time</option>
+                                            <option value="bit">bit</option>
+                                            <option value="uniqueidentifier">uniqueidentifier</option>
+                                            <option value="computed">computed</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if (newColumnDataType != "computed")
+                            {
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Max Length:</label>
+                                            <input type="number" class="form-control" @bind="newColumnMaxLength"
+                                                   placeholder="Optional" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check mt-4">
+                                            <input class="form-check-input" type="checkbox" @bind="newColumnIsNullable" />
+                                            <label class="form-check-label">Allow Null</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (newColumnDataType == "computed")
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label">SQL Expression:</label>
+                                    <div class="form-text mb-2">
+                                        Available columns: @string.Join(", ", selectedTableForColumn?.Columns?.Where(c => !c.IsComputed).Select(c => c.Name) ?? new List<string>())
+                                    </div>
+                                    <textarea class="form-control" rows="3" @bind="newColumnExpression"
+                                              placeholder="Example: [FirstName] + ' ' + [LastName]"
+                                              style="font-family: 'Courier New', monospace;"></textarea>
+                                </div>
+                            }
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" @bind="newColumnIsPrimaryKey" />
+                                        <label class="form-check-label">Primary Key</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" @bind="newColumnIsForeignKey" />
+                                        <label class="form-check-label">Foreign Key</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseAddColumnModal">Cancel</button>
+                            <button type="button" class="btn btn-primary" @onclick="ConfirmAddColumn"
+                                    disabled="@(string.IsNullOrWhiteSpace(newColumnName) || (newColumnDataType == "computed" && string.IsNullOrWhiteSpace(newColumnExpression)))">
+                                Add Column
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Column Alias Modal -->
+        @if (showColumnAliasModal)
+        {
+            <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Set Column Alias</h5>
+                            <button type="button" class="btn-close" @onclick="CloseColumnAliasModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label">Column: <strong>@selectedColumnForAlias?.Name</strong></label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Query Alias:</label>
+                                <input type="text" class="form-control" @bind="newColumnAlias"
+                                       placeholder="Enter alias (leave empty to remove)" />
+                                <div class="form-text">This alias will be used in the generated SQL query</div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseColumnAliasModal">Cancel</button>
+                            <button type="button" class="btn btn-primary" @onclick="ConfirmColumnAlias">
+                                Set Alias
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
 
         <!-- Rename Table Modal -->
         @if (showRenameModal)
@@ -216,7 +380,7 @@
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title">
-                                <i class="bi bi-arrow-left-right"></i> 
+                                <i class="bi bi-arrow-left-right"></i>
                                 @(editingRelationshipId != null ? "Edit Relationship" : "Create Relationship")
                             </h5>
                             <button type="button" class="btn-close" @onclick="CloseJoinTypeModal"></button>
@@ -240,20 +404,20 @@
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <hr />
-                            
+
                             <div class="mb-3">
                                 <label class="form-label">Join Type:</label>
                                 <div class="join-type-selection">
                                     @foreach (var joinType in Enum.GetValues<JoinType>())
                                     {
                                         <div class="form-check join-type-option">
-                                            <input class="form-check-input" type="radio" 
-                                                   name="joinType" 
-                                                   id="join_@joinType" 
+                                            <input class="form-check-input" type="radio"
+                                                   name="joinType"
+                                                   id="join_@joinType"
                                                    value="@joinType"
-                                                   @onchange="@((e) => selectedJoinType = (JoinType)Enum.Parse(typeof(JoinType), e.Value.ToString()))"
+                                                   @onchange="@(e => OnJoinTypeChanged(e))"
                                                    checked="@(selectedJoinType == joinType)" />
                                             <label class="form-check-label" for="join_@joinType">
                                                 <strong style="color: @GetJoinTypeColor(joinType);">@GetJoinTypeDisplayName(joinType)</strong>
@@ -264,7 +428,7 @@
                                     }
                                 </div>
                             </div>
-                            
+
                             <div class="mb-3">
                                 <label class="form-label">Cardinality:</label>
                                 <select class="form-select" @bind="selectedCardinality">
@@ -274,10 +438,10 @@
                                     <option value="N:N">Many-to-Many (N:N)</option>
                                 </select>
                             </div>
-                            
+
                             <div class="mb-3">
                                 <label class="form-label">Relationship Name (Optional):</label>
-                                <input type="text" class="form-control" @bind="relationshipName" 
+                                <input type="text" class="form-control" @bind="relationshipName"
                                        placeholder="e.g., CustomerOrders, UserRoles" />
                             </div>
                         </div>
@@ -304,14 +468,14 @@
                     <a class="nav-link" data-bs-toggle="tab" href="#validation">Validation</a>
                 </li>
             </ul>
-            
+
             <div class="tab-content">
                 <div class="tab-pane fade show active" id="sql-preview">
                     <div class="sql-preview">
                         <pre><code>@_generatedSql</code></pre>
                     </div>
                 </div>
-                
+
                 <div class="tab-pane fade" id="properties">
                     @if (_selectedTable != null)
                     {
@@ -338,7 +502,7 @@
                         </div>
                     }
                 </div>
-                
+
                 <div class="tab-pane fade" id="validation">
                     <div class="validation-panel">
                         <h5>Validation Rules</h5>
@@ -409,7 +573,7 @@
                     <div class="modal-body">
                         <div class="mb-3">
                             <label class="form-label">Connection String:</label>
-                            <textarea class="form-control" @bind="ConnectionString" rows="3" 
+                            <textarea class="form-control" @bind="ConnectionString" rows="3"
                                       placeholder="Server=localhost;Database=YourDB;User Id=sa;Password=YourPassword;TrustServerCertificate=True"></textarea>
                         </div>
                         @if (!string.IsNullOrEmpty(_connectionError))
@@ -448,7 +612,7 @@
                         <button type="button" class="btn-close" @onclick="CloseExcelDialog"></button>
                     </div>
                     <div class="modal-body">
-                        <!-- ExcelUpload component would go here -->                    
+                        <!-- ExcelUpload component would go here -->
                     </div>
                 </div>
             </div>
@@ -464,9 +628,9 @@
     private List<ValidationRule> _validationRules = new();
     private System.Data.DataTable? _queryResults;
     private ElementReference canvasElement;
-    
+
     private double _zoomLevel = 1.0;
-    
+
     [Parameter]
     public string? ConnectionString { get; set; }
 
@@ -478,10 +642,11 @@
     private bool _showExcelModal = false;
     private bool _isConnecting = false;
     private string _connectionError = "";
-    
+
     // JavaScript module
     private IJSObjectReference? _jsModule;
-    
+    private DotNetObjectReference<SqlQueryBuilder>? dotNetHelper;
+
     // Rename modal state
     private bool showRenameModal = false;
     private string currentTableIdForRename = "";
@@ -495,8 +660,24 @@
     private string relationshipName = "";
     private string? editingRelationshipId = null;
 
-    // DotNet object reference for JavaScript interop
-    private DotNetObjectReference<SqlQueryBuilder> dotNetHelper = null!;
+    // Add Column modal state
+    private bool showAddColumnModal = false;
+    private TableModel? selectedTableForColumn;
+    private string newColumnName = "";
+    private string newColumnDataType = "nvarchar";
+    private int? newColumnMaxLength;
+    private bool newColumnIsNullable = true;
+    private bool newColumnIsPrimaryKey = false;
+    private bool newColumnIsForeignKey = false;
+    private string newColumnExpression = "";
+
+    // Column Alias modal state
+    private bool showColumnAliasModal = false;
+    private ColumnModel? selectedColumnForAlias;
+    private string newColumnAlias = "";
+
+    // Auto-arrange state
+    private bool isAutoArranging = false;
 
     // Pending relationship model
     public class PendingRelationship
@@ -526,14 +707,14 @@
 
                 _jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
                     "import", "./_content/VisualSqlBuilder.Core/visual-sql-builder.js");
-                
-                await InitializeCanvas();                
+
+                await InitializeCanvas();
                 await JSRuntime.InvokeVoidAsync("console.log", "Canvas initialization completed");
 
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error initializing JavaScript: {ex.Message}");                
+                Console.WriteLine($"Error initializing JavaScript: {ex.Message}");
                 await JSRuntime.InvokeVoidAsync("console.error", $"Canvas initialization failed: {ex.Message}");
             }
         }
@@ -545,7 +726,7 @@
         {
             if (_jsModule != null)
             {
-                await _jsModule.InvokeVoidAsync("initializeSqlCanvas", canvasElement, dotNetHelper);                        
+                await _jsModule.InvokeVoidAsync("initializeSqlCanvas", canvasElement, dotNetHelper);
             }
         }
         catch (Exception ex)
@@ -644,14 +825,67 @@
     }
 
     [JSInvokable]
-    public async Task UpdateTablePosition(string tableId, double x, double y)
+    public void ShowColumnAliasModal(string tableId, string columnId)
     {
         var table = _queryModel.Tables.FirstOrDefault(t => t.Id == tableId);
-        if (table != null)
+        selectedColumnForAlias = table?.Columns.FirstOrDefault(c => c.Id == columnId);
+
+        if (selectedColumnForAlias != null)
         {
-            table.Position.X = (int)x;
-            table.Position.Y = (int)y;
+            newColumnAlias = selectedColumnForAlias.QueryAlias ?? "";
+            showColumnAliasModal = true;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void ToggleColumnSelection(string tableId, string columnId)
+    {
+        var table = _queryModel.Tables.FirstOrDefault(t => t.Id == tableId);
+        var column = table?.Columns.FirstOrDefault(c => c.Id == columnId);
+
+        if (column != null)
+        {
+            column.IsSelected = !column.IsSelected;
             UpdateSqlPreview();
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task AutoArrangeTables()
+    {
+        if (isAutoArranging) return;
+
+        isAutoArranging = true;
+        StateHasChanged();
+
+        try
+        {
+            // Get all tables that have relationships
+            var connectedTables = _queryModel.Tables
+                .Where(t => _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id))
+                .ToList();
+
+            // Arrange connected tables in a hierarchical layout
+            if (connectedTables.Any())
+            {
+                await ArrangeConnectedTables(connectedTables);
+            }
+
+            // Arrange orphan tables separately
+            var orphanTables = _queryModel.Tables.Except(connectedTables).ToList();
+            if (orphanTables.Any())
+            {
+                ArrangeOrphanTables(orphanTables, connectedTables.Any() ? 800 : 50);
+            }
+
+            UpdateSqlPreview();
+            StateHasChanged();
+        }
+        finally
+        {
+            isAutoArranging = false;
         }
     }
 
@@ -722,6 +956,153 @@
         StateHasChanged();
     }
 
+    private void ConfirmAddColumn()
+    {
+        if (selectedTableForColumn != null && !string.IsNullOrWhiteSpace(newColumnName))
+        {
+            var newColumn = new ColumnModel
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = newColumnName,
+                DataType = newColumnDataType,
+                MaxLength = newColumnMaxLength,
+                IsNullable = newColumnIsNullable,
+                IsPrimaryKey = newColumnIsPrimaryKey,
+                IsForeignKey = newColumnIsForeignKey,
+                IsComputed = newColumnDataType == "computed",
+                ComputedExpression = newColumnDataType == "computed" ? newColumnExpression : null
+            };
+
+            selectedTableForColumn.Columns.Add(newColumn);
+            UpdateSqlPreview();
+            CloseAddColumnModal();
+        }
+    }
+
+    private void CloseColumnAliasModal()
+    {
+        showColumnAliasModal = false;
+        selectedColumnForAlias = null;
+        newColumnAlias = "";
+        StateHasChanged();
+    }
+
+    private void ConfirmColumnAlias()
+    {
+        if (selectedColumnForAlias != null)
+        {
+            selectedColumnForAlias.QueryAlias = string.IsNullOrWhiteSpace(newColumnAlias) ? null : newColumnAlias;
+            UpdateSqlPreview();
+            CloseColumnAliasModal();
+        }
+    }
+
+    private async Task ArrangeConnectedTables(List<TableModel> connectedTables)
+    {
+        // Simple hierarchical layout algorithm
+        var positioned = new HashSet<string>();
+        var currentX = 50;
+        var currentY = 50;
+        var maxHeightInRow = 0;
+        var tablesPerRow = 3;
+        var tableSpacing = 320;
+        var rowSpacing = 200;
+
+        // Build a graph of relationships
+        var graph = new Dictionary<string, List<string>>();
+        foreach (var table in connectedTables)
+        {
+            graph[table.Id] = new List<string>();
+        }
+
+        foreach (var rel in _queryModel.Relationships)
+        {
+            if (graph.ContainsKey(rel.SourceTableId) && graph.ContainsKey(rel.TargetTableId))
+            {
+                graph[rel.SourceTableId].Add(rel.TargetTableId);
+                graph[rel.TargetTableId].Add(rel.SourceTableId);
+            }
+        }
+
+        // Find root tables (tables with most connections or primary key tables)
+        var rootTables = connectedTables
+            .OrderByDescending(t => graph[t.Id].Count)
+            .ThenByDescending(t => t.Columns.Any(c => c.IsPrimaryKey))
+            .Take(tablesPerRow)
+            .ToList();
+
+        // Position root tables first
+        foreach (var table in rootTables)
+        {
+            table.Position = new Position { X = currentX, Y = currentY };
+            positioned.Add(table.Id);
+
+            currentX += tableSpacing;
+            maxHeightInRow = Math.Max(maxHeightInRow, (int)table.Size.Height);
+
+            if (currentX > tableSpacing * tablesPerRow)
+            {
+                currentX = 50;
+                currentY += maxHeightInRow + rowSpacing;
+                maxHeightInRow = 0;
+            }
+        }
+
+        // Position remaining tables
+        var remaining = connectedTables.Where(t => !positioned.Contains(t.Id)).ToList();
+        foreach (var table in remaining)
+        {
+            table.Position = new Position { X = currentX, Y = currentY };
+
+            currentX += tableSpacing;
+            maxHeightInRow = Math.Max(maxHeightInRow, (int)table.Size.Height);
+
+            if (currentX > tableSpacing * tablesPerRow)
+            {
+                currentX = 50;
+                currentY += maxHeightInRow + rowSpacing;
+                maxHeightInRow = 0;
+            }
+        }
+
+        await Task.Delay(100); // Small delay for visual effect
+    }
+
+    private void ArrangeOrphanTables(List<TableModel> orphanTables, int startX)
+    {
+        var currentX = startX;
+        var currentY = 50;
+        var maxHeightInRow = 0;
+        var tableSpacing = 320;
+        var rowSpacing = 200;
+        var tablesPerRow = 3;
+
+        foreach (var table in orphanTables)
+        {
+            table.Position = new Position { X = currentX, Y = currentY };
+
+            currentX += tableSpacing;
+            maxHeightInRow = Math.Max(maxHeightInRow, (int)table.Size.Height);
+
+            if (currentX > startX + (tableSpacing * tablesPerRow))
+            {
+                currentX = startX;
+                currentY += maxHeightInRow + rowSpacing;
+                maxHeightInRow = 0;
+            }
+        }
+    }
+
+    // Fix for the enum parsing warning
+    private void OnJoinTypeChanged(ChangeEventArgs e)
+    {
+        if (e.Value != null && Enum.TryParse<JoinType>(e.Value.ToString(), out var joinType))
+        {
+            selectedJoinType = joinType;
+            StateHasChanged();
+        }
+    }
+
     // Helper methods for join type display
     private string GetJoinTypeColor(JoinType joinType)
     {
@@ -775,7 +1156,7 @@
         };
     }
 
-    // Rest of the existing methods...
+    // Connection and database methods
     private void ShowConnectionDialog()
     {
         Console.WriteLine("ShowConnectionDialog called");
@@ -833,20 +1214,20 @@
         try
         {
             Console.WriteLine($"Connecting with: {ConnectionString}");
-            
+
             var tables = await SchemaService.LoadTablesFromSqlServerAsync(ConnectionString);
             var relationships = await SchemaService.LoadRelationshipsFromSqlServerAsync(ConnectionString, tables);
-            
+
             _queryModel.Tables.Clear();
             _queryModel.Relationships.Clear();
-            
+
             _queryModel.Tables.AddRange(tables);
             _queryModel.Relationships.AddRange(relationships);
-            
+
             PositionTables();
             CloseConnectionDialog();
             UpdateSqlPreview();
-            
+
             Console.WriteLine($"Loaded {tables.Count} tables and {relationships.Count} relationships");
         }
         catch (Exception ex)
@@ -881,14 +1262,14 @@
     {
         int x = 50, y = 50;
         int maxHeight = 0;
-        
+
         foreach (var table in _queryModel.Tables)
         {
             table.Position = new Position { X = x, Y = y };
-            
+
             x += 300;
             maxHeight = Math.Max(maxHeight, (int)table.Size.Height);
-            
+
             if (x > 1200)
             {
                 x = 50;
@@ -907,13 +1288,13 @@
             Schema = "dbo",
             Position = new Position { X = 100, Y = 100 }
         };
-        
+
         newTable.Columns.Add(new ColumnModel { Name = "Id", DataType = "int", IsPrimaryKey = true });
         newTable.Columns.Add(new ColumnModel { Name = "CreatedBy", DataType = "nvarchar" });
         newTable.Columns.Add(new ColumnModel { Name = "CreatedAt", DataType = "datetime2" });
         newTable.Columns.Add(new ColumnModel { Name = "ModifiedBy", DataType = "nvarchar" });
         newTable.Columns.Add(new ColumnModel { Name = "ModifiedAt", DataType = "datetime2" });
-        
+
         _queryModel.Tables.Add(newTable);
         UpdateSqlPreview();
     }
@@ -921,19 +1302,8 @@
     private void RemoveTable(TableModel table)
     {
         _queryModel.Tables.Remove(table);
-        _queryModel.Relationships.RemoveAll(r => 
+        _queryModel.Relationships.RemoveAll(r =>
             r.SourceTableId == table.Id || r.TargetTableId == table.Id);
-        UpdateSqlPreview();
-    }
-
-    private void AddColumn(TableModel table)
-    {
-        table.Columns.Add(new ColumnModel
-        {
-            Name = "NewColumn",
-            DataType = "nvarchar",
-            MaxLength = 255
-        });
         UpdateSqlPreview();
     }
 
@@ -962,11 +1332,12 @@
         _validationRules.Remove(rule);
     }
 
-    private void UpdateSqlPreview()
+    private void UpdateSqlPreview(QueryModel? customQueryModel = null)
     {
         try
         {
-            _generatedSql = SqlGenerator.GenerateQuery(_queryModel);
+            var modelToUse = customQueryModel ?? _queryModel;
+            _generatedSql = SqlGenerator.GenerateQuery(modelToUse);
             StateHasChanged();
         }
         catch (Exception ex)
@@ -975,10 +1346,69 @@
         }
     }
 
+    private void GenerateQuery()
+    {
+        // Only include tables that have relationships or selected columns
+        var relevantTables = _queryModel.Tables.Where(t =>
+            t.Columns.Any(c => c.IsSelected) ||
+            _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
+        ).ToList();
+
+        if (!relevantTables.Any())
+        {
+            _generatedSql = "-- No tables selected or connected. Please select columns or create relationships.";
+            StateHasChanged();
+            return;
+        }
+
+        // Exclude orphan tables (tables with no relationships) unless they have selected columns
+        var tablesWithRelationships = _queryModel.Tables.Where(t =>
+            _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
+        ).ToList();
+
+        var orphanTablesWithSelectedColumns = _queryModel.Tables.Where(t =>
+            !_queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id) &&
+            t.Columns.Any(c => c.IsSelected)
+        ).ToList();
+
+        var finalTables = tablesWithRelationships.Concat(orphanTablesWithSelectedColumns).ToList();
+
+        if (!finalTables.Any())
+        {
+            _generatedSql = "-- No connected tables found. Create relationships between tables or select columns.";
+            StateHasChanged();
+            return;
+        }
+
+        // Create a temporary query model with only relevant tables
+        var queryModelForGeneration = new QueryModel
+        {
+            Tables = finalTables,
+            Relationships = _queryModel.Relationships.Where(r =>
+                finalTables.Any(t => t.Id == r.SourceTableId) &&
+                finalTables.Any(t => t.Id == r.TargetTableId)
+            ).ToList()
+        };
+
+        UpdateSqlPreview(queryModelForGeneration);
+    }
+
+    [JSInvokable]
+    public async Task UpdateTablePosition(string tableId, double x, double y)
+    {
+        var table = _queryModel.Tables.FirstOrDefault(t => t.Id == tableId);
+        if (table != null)
+        {
+            table.Position.X = (int)x;
+            table.Position.Y = (int)y;
+            UpdateSqlPreview();
+        }
+    }
+
     private async Task GenerateAndExecuteQuery()
     {
-        UpdateSqlPreview();
-        
+        GenerateQuery();
+
         if (!string.IsNullOrEmpty(ConnectionString) && !string.IsNullOrEmpty(_generatedSql))
         {
             try
@@ -1002,12 +1432,12 @@
         try
         {
             var json = System.Text.Json.JsonSerializer.Serialize(_queryModel);
-            
+
             if (_jsModule != null)
             {
                 await _jsModule.InvokeVoidAsync("saveToLocalStorage", "sqlBuilderLayout", json);
             }
-            
+
             Console.WriteLine("Layout saved successfully");
         }
         catch (Exception ex)
@@ -1062,6 +1492,28 @@
         {
             await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
         }
+    }
+
+    // Modal event handlers
+    private void ShowAddColumnModal(TableModel table)
+    {
+        selectedTableForColumn = table;
+        newColumnName = "";
+        newColumnDataType = "nvarchar";
+        newColumnMaxLength = null;
+        newColumnIsNullable = true;
+        newColumnIsPrimaryKey = false;
+        newColumnIsForeignKey = false;
+        newColumnExpression = "";
+        showAddColumnModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseAddColumnModal()
+    {
+        showAddColumnModal = false;
+        selectedTableForColumn = null;
+        StateHasChanged();
     }
 
     public async ValueTask DisposeAsync()
