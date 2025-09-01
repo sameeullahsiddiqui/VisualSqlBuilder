@@ -275,8 +275,7 @@ window.sqlBuilderInterop = {
         // Add visual feedback to start connector
         e.target.classList.add('connector-active');
 
-        const rect = e.target.getBoundingClientRect();
-        const canvasRect = this.canvasElement.getBoundingClientRect();
+        const startPos = this.getConnectorPosition(e.target);
 
         // Create drag line
         this.dragState.dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -286,13 +285,10 @@ window.sqlBuilderInterop = {
         this.dragState.dragLine.setAttribute('stroke-linecap', 'round');
         this.dragState.dragLine.setAttribute('class', 'drag-line');
 
-        const startX = rect.left - canvasRect.left + (rect.width / 2);
-        const startY = rect.top - canvasRect.top + (rect.height / 2);
-
-        this.dragState.dragLine.setAttribute('x1', startX);
-        this.dragState.dragLine.setAttribute('y1', startY);
-        this.dragState.dragLine.setAttribute('x2', startX);
-        this.dragState.dragLine.setAttribute('y2', startY);
+        this.dragState.dragLine.setAttribute('x1', startPos.x);
+        this.dragState.dragLine.setAttribute('y1', startPos.y);
+        this.dragState.dragLine.setAttribute('x2', startPos.x);
+        this.dragState.dragLine.setAttribute('y2', startPos.y);
 
         const relationshipLayer = document.querySelector('.relationship-layer');
         if (relationshipLayer) {
@@ -450,8 +446,21 @@ window.sqlBuilderInterop = {
     // Rest of the existing methods remain the same
     dragMoveListener: function (event) {
         const target = event.target;
-        const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
-        const y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+        let x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+        let y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+
+        // Check for collision with other tables
+        if (this.checkTableCollision(target, x, y)) {
+            // Find nearest non-colliding position
+            const adjustedPos = this.findNearestNonCollidingPosition(target, x, y);
+            x = adjustedPos.x;
+            y = adjustedPos.y;
+        }
+
+        // Check domain constraints
+        const constrainedPos = this.constrainTableToDomain(target, x, y);
+        x = constrainedPos.x;
+        y = constrainedPos.y;
 
         target.style.transform = `translate(${x}px, ${y}px)`;
         target.setAttribute('data-x', x);
@@ -495,13 +504,237 @@ window.sqlBuilderInterop = {
         this.updateRelationshipLines();
     },
 
+    //Enhanced relationship line updates
     updateRelationshipLines: function () {
-        // This will be called by Blazor component when tables move
+        if (this.dotNetHelper) {
+            this.dotNetHelper.invokeMethodAsync('UpdateRelationshipLines');
+        }
+    },
+
+    // Refresh all relationship line positions
+    refreshAllRelationshipLines: function () {
         const lines = document.querySelectorAll('.relationship-line');
         lines.forEach(line => {
-            // Update line positions based on table movements
-            // This logic would be handled by the Blazor component
+            const relationshipId = line.getAttribute('data-relationship-id');
+            this.updateRelationshipLinePosition(relationshipId);
         });
+    },
+
+    // Find nearest position where table doesn't collide
+    findNearestNonCollidingPosition: function (element, targetX, targetY) {
+        const step = 10;
+        const maxAttempts = 20;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const radius = attempt * step;
+
+            // Try positions in a spiral pattern
+            for (let angle = 0; angle < 360; angle += 45) {
+                const radians = angle * Math.PI / 180;
+                const testX = targetX + Math.cos(radians) * radius;
+                const testY = targetY + Math.sin(radians) * radius;
+
+                if (!this.checkTableCollision(element, testX, testY)) {
+                    return { x: testX, y: testY };
+                }
+            }
+        }
+
+        // If no position found, return original position
+        return { x: targetX, y: targetY };
+    },
+
+    //Check if two rectangles overlap
+    rectanglesOverlap: function (rect1, rect2) {
+        const buffer = 20; // Add buffer space between tables
+
+        return !(rect1.x + rect1.width + buffer < rect2.x ||
+            rect2.x + rect2.width + buffer < rect1.x ||
+            rect1.y + rect1.height + buffer < rect2.y ||
+            rect2.y + rect2.height + buffer < rect1.y);
+    },
+
+    // Check for table collisions during drag
+    checkTableCollision: function (draggedElement, newX, newY) {
+        const draggedRect = {
+            x: newX,
+            y: newY,
+            width: draggedElement.offsetWidth,
+            height: draggedElement.offsetHeight
+        };
+
+        const tables = document.querySelectorAll('.table-card');
+
+        for (let table of tables) {
+            if (table === draggedElement) continue;
+
+            const tableRect = {
+                x: parseFloat(table.getAttribute('data-x')) || 0,
+                y: parseFloat(table.getAttribute('data-y')) || 0,
+                width: table.offsetWidth,
+                height: table.offsetHeight
+            };
+
+            if (this.rectanglesOverlap(draggedRect, tableRect)) {
+                return true;
+            }
+        }
+
+        return false;
+    },
+
+    // Get precise connector position relative to canvas
+    getConnectorPosition: function (connector) {
+        const rect = connector.getBoundingClientRect();
+        const canvasRect = this.canvasElement.getBoundingClientRect();
+
+        return {
+            x: rect.left - canvasRect.left + (rect.width / 2),
+            y: rect.top - canvasRect.top + (rect.height / 2)
+        };
+    },
+
+    // Calculate connection points with smart routing
+    calculateConnectionPath: function (sourceConnector, targetConnector) {
+        const sourcePos = this.getConnectorPosition(sourceConnector);
+        const targetPos = this.getConnectorPosition(targetConnector);
+
+        // Smart routing to avoid overlapping tables
+        const tables = Array.from(document.querySelectorAll('.table-card'));
+        const path = this.findOptimalPath(sourcePos, targetPos, tables);
+
+        return path;
+    },
+
+    // Find optimal path avoiding table overlaps
+    findOptimalPath: function (start, end, obstacles) {
+        // Simple orthogonal routing with obstacle avoidance
+        const midX = (start.x + end.x) / 2;
+        const midY = (start.y + end.y) / 2;
+
+        // Check for obstacles and adjust path
+        const hasObstacle = this.checkPathForObstacles(start, end, obstacles);
+
+        if (hasObstacle) {
+            // Route around obstacles using waypoints
+            const waypoints = this.calculateWaypoints(start, end, obstacles);
+            return waypoints;
+        }
+
+        return [start, end];
+    },
+
+    // Check if direct path intersects with tables
+    checkPathForObstacles: function (start, end, tables) {
+        for (let table of tables) {
+            const rect = table.getBoundingClientRect();
+            const canvasRect = this.canvasElement.getBoundingClientRect();
+
+            const tableRect = {
+                x: rect.left - canvasRect.left,
+                y: rect.top - canvasRect.top,
+                width: rect.width,
+                height: rect.height
+            };
+
+            if (this.lineIntersectsRect(start, end, tableRect)) {
+                return true;
+            }
+        }
+        return false;
+    },
+
+    // Calculate waypoints to route around obstacles
+    calculateWaypoints: function (start, end, obstacles) {
+        // Simple L-shaped routing
+        const horizontal = Math.abs(end.x - start.x) > Math.abs(end.y - start.y);
+
+        if (horizontal) {
+            const midPoint = { x: end.x, y: start.y };
+            return [start, midPoint, end];
+        } else {
+            const midPoint = { x: start.x, y: end.y };
+            return [start, midPoint, end];
+        }
+    },
+
+    // Check if line intersects rectangle
+    lineIntersectsRect: function (start, end, rect) {
+        // Expand rectangle slightly for padding
+        const padding = 10;
+        const expandedRect = {
+            x: rect.x - padding,
+            y: rect.y - padding,
+            width: rect.width + (padding * 2),
+            height: rect.height + (padding * 2)
+        };
+
+        return this.lineIntersectsRectangle(start.x, start.y, end.x, end.y, expandedRect);
+    },
+
+    // Line-rectangle intersection algorithm
+    lineIntersectsRectangle: function (x1, y1, x2, y2, rect) {
+        const minX = Math.min(x1, x2);
+        const maxX = Math.max(x1, x2);
+        const minY = Math.min(y1, y2);
+        const maxY = Math.max(y1, y2);
+
+        if (maxX < rect.x || minX > rect.x + rect.width ||
+            maxY < rect.y || minY > rect.y + rect.height) {
+            return false;
+        }
+
+        return true;
+    },
+
+    // Update specific relationship line position
+    updateRelationshipLinePosition: function (relationshipId) {
+        const line = document.querySelector(`[data-relationship-id="${relationshipId}"]`);
+        if (!line) return;
+
+        // Get source and target connectors
+        const sourceTableId = line.getAttribute('data-source-table-id');
+        const targetTableId = line.getAttribute('data-target-table-id');
+        const sourceColumnId = line.getAttribute('data-source-column-id');
+        const targetColumnId = line.getAttribute('data-target-column-id');
+
+        const sourceConnector = document.querySelector(`[data-table-id="${sourceTableId}"][data-column-id="${sourceColumnId}"]`);
+        const targetConnector = document.querySelector(`[data-table-id="${targetTableId}"][data-column-id="${targetColumnId}"]`);
+
+        if (sourceConnector && targetConnector) {
+            const path = this.calculateConnectionPath(sourceConnector, targetConnector);
+
+            if (path.length === 2) {
+                // Direct connection
+                line.setAttribute('x1', path[0].x);
+                line.setAttribute('y1', path[0].y);
+                line.setAttribute('x2', path[1].x);
+                line.setAttribute('y2', path[1].y);
+            } else {
+                // Multi-segment connection - convert to polyline or path
+                this.createMultiSegmentLine(line, path);
+            }
+        }
+    },
+
+    // Create multi-segment connection line
+    createMultiSegmentLine: function (line, waypoints) {
+        // Convert line to polyline for multi-segment paths
+        if (waypoints.length > 2) {
+            const points = waypoints.map(p => `${p.x},${p.y}`).join(' ');
+
+            // Create polyline element to replace line
+            const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            polyline.setAttribute('points', points);
+            polyline.setAttribute('stroke', line.getAttribute('stroke'));
+            polyline.setAttribute('stroke-width', line.getAttribute('stroke-width'));
+            polyline.setAttribute('stroke-dasharray', line.getAttribute('stroke-dasharray'));
+            polyline.setAttribute('fill', 'none');
+            polyline.setAttribute('class', line.getAttribute('class'));
+            polyline.setAttribute('data-relationship-id', line.getAttribute('data-relationship-id'));
+
+            line.parentNode.replaceChild(polyline, line);
+        }
     },
 
     setCanvasZoom: function (zoom) {
@@ -531,7 +764,102 @@ window.sqlBuilderInterop = {
 
     loadFromLocalStorage: function (key) {
         return localStorage.getItem(key);
-    }
+    },
+
+     //Update table position programmatically (called from C#)
+    updateTablePosition: function (tableId, newX, newY) {
+        const tableElement = document.querySelector(`[data-table-id="${tableId}"]`);
+        if (tableElement) {
+            // Update visual position
+            tableElement.style.transform = `translate(${newX}px, ${newY}px)`;
+            tableElement.setAttribute('data-x', newX);
+            tableElement.setAttribute('data-y', newY);
+
+            // Update relationship lines
+            this.updateRelationshipLines();
+        }
+    },
+
+    //Animate table movement to domain
+    animateTableToDomain: function (tableId, newX, newY, duration = 800) {
+        const tableElement = document.querySelector(`[data-table-id="${tableId}"]`);
+        if (!tableElement) return;
+
+        const currentX = parseFloat(tableElement.getAttribute('data-x')) || 0;
+        const currentY = parseFloat(tableElement.getAttribute('data-y')) || 0;
+
+        // Add animation class
+        tableElement.classList.add('moving-to-domain');
+
+        // Animate position change
+        const startTime = Date.now();
+        const animateStep = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Easing function (ease-out)
+            const easeOut = 1 - Math.pow(1 - progress, 3);
+
+            const currentAnimX = currentX + (newX - currentX) * easeOut;
+            const currentAnimY = currentY + (newY - currentY) * easeOut;
+
+            tableElement.style.transform = `translate(${currentAnimX}px, ${currentAnimY}px)`;
+            tableElement.setAttribute('data-x', currentAnimX);
+            tableElement.setAttribute('data-y', currentAnimY);
+
+            // Update relationship lines during animation
+            this.updateRelationshipLines();
+
+            if (progress < 1) {
+                requestAnimationFrame(animateStep);
+            } else {
+                // Animation complete
+                tableElement.classList.remove('moving-to-domain');
+                tableElement.style.transform = `translate(${newX}px, ${newY}px)`;
+                tableElement.setAttribute('data-x', newX);
+                tableElement.setAttribute('data-y', newY);
+                this.updateRelationshipLines();
+            }
+        };
+
+        requestAnimationFrame(animateStep);
+    },
+
+    //Update domain visual bounds
+    updateDomainBounds: function (domainId, x, y, width, height) {
+        const domainElement = document.querySelector(`[data-domain-id="${domainId}"]`);
+        if (domainElement) {
+            domainElement.style.left = `${x}px`;
+            domainElement.style.top = `${y}px`;
+            domainElement.style.width = `${width}px`;
+            domainElement.style.height = `${height}px`;
+        }
+    },
+
+    //Check if table is within domain bounds
+    isTableInDomainBounds: function (tableElement, domainElement) {
+        const tableRect = tableElement.getBoundingClientRect();
+        const domainRect = domainElement.getBoundingClientRect();
+
+        return (
+            tableRect.left >= domainRect.left &&
+            tableRect.top >= domainRect.top + 40 && // Account for domain header
+            tableRect.right <= domainRect.right &&
+            tableRect.bottom <= domainRect.bottom
+        );
+    },
+
+    //Constrain table movement within domain
+    constrainTableToDomain: function (tableElement, newX, newY) {
+        const tableId = tableElement.getAttribute('data-table-id');
+
+        // Find which domain this table belongs to
+        if (this.dotNetHelper) {
+            return this.dotNetHelper.invokeMethodAsync('GetTableDomainConstraints', tableId, newX, newY);
+        }
+
+        return { x: newX, y: newY };
+    },
 };
 
 // Export functions
@@ -567,6 +895,18 @@ export function autoArrangeTables() {
     window.sqlBuilderInterop.autoArrangeTables();
 }
 
+export function updateTablePosition(tableId, x, y) {
+    window.sqlBuilderInterop.updateTablePosition(tableId, x, y);
+}
+
+export function animateTableToDomain(tableId, x, y, duration) {
+    window.sqlBuilderInterop.animateTableToDomain(tableId, x, y, duration);
+}
+
+export function updateDomainBounds(domainId, x, y, width, height) {
+    window.sqlBuilderInterop.updateDomainBounds(domainId, x, y, width, height);
+}
+
 // Make functions available globally
 window.initializeSqlCanvas = initializeSqlCanvas;
 window.setCanvasZoom = setCanvasZoom;
@@ -576,3 +916,6 @@ window.saveToLocalStorage = saveToLocalStorage;
 window.loadFromLocalStorage = loadFromLocalStorage;
 window.autoArrangeTables = autoArrangeTables;
 window.refreshAllRelationshipLines = refreshAllRelationshipLines;
+window.updateTablePosition = updateTablePosition;
+window.animateTableToDomain = animateTableToDomain;
+window.updateDomainBounds = updateDomainBounds;
