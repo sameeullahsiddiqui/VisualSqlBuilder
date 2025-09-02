@@ -24,71 +24,15 @@ window.sqlBuilderInterop = {
                 this.setupInteractions();
                 this.setupContextMenu();
                 this.setupRelationshipCreation();
+                this.initializeDomainCollapse(); 
             };
             document.head.appendChild(script);
         } else {
             this.setupInteractions();
             this.setupContextMenu();
             this.setupRelationshipCreation();
+            this.initializeDomainCollapse();
         }
-    },
-
-    setupInteractions: function () {
-        // Make tables draggable - but prevent dragging when starting from column connectors
-        interact('.table-card')
-            .draggable({
-                inertia: true,
-                // Prevent dragging when starting from column connectors or other specific elements
-                ignoreFrom: '.column-connector, .btn, .form-check-input, .column-row',
-                // Only allow dragging from the header area
-                allowFrom: '.table-card-header',
-                modifiers: [
-                    interact.modifiers.restrictRect({
-                        restriction: 'parent',
-                        endOnly: true
-                    })
-                ],
-                autoScroll: true,
-                listeners: {
-                    start: this.tableDragStart.bind(this),
-                    move: this.dragMoveListener.bind(this),
-                    end: this.dragEndListener.bind(this)
-                }
-            })
-            .resizable({
-                edges: { left: true, right: true, bottom: true, top: true },
-                // Prevent resizing when interacting with column connectors
-                ignoreFrom: '.column-connector',
-                listeners: {
-                    start: this.tableResizeStart.bind(this),
-                    move: this.resizeMoveListener.bind(this),
-                    end: this.tableResizeEnd.bind(this)
-                },
-                modifiers: [
-                    interact.modifiers.restrictEdges({
-                        outer: 'parent'
-                    }),
-                    interact.modifiers.restrictSize({
-                        min: { width: 200, height: 150 }
-                    })
-                ],
-                inertia: true
-            });
-
-        // Setup domain interactions
-        interact('.domain-container')
-            .draggable({
-                allowFrom: '.domain-header',
-                listeners: {
-                    move: this.dragMoveListener.bind(this)
-                }
-            })
-            .resizable({
-                edges: { left: true, right: true, bottom: true, top: true },
-                listeners: {
-                    move: this.resizeMoveListener.bind(this)
-                }
-            });
     },
 
     setupContextMenu: function () {
@@ -504,13 +448,6 @@ window.sqlBuilderInterop = {
         this.updateRelationshipLines();
     },
 
-    //Enhanced relationship line updates
-    updateRelationshipLines: function () {
-        if (this.dotNetHelper) {
-            this.dotNetHelper.invokeMethodAsync('UpdateRelationshipLines');
-        }
-    },
-
     // Refresh all relationship line positions
     refreshAllRelationshipLines: function () {
         const lines = document.querySelectorAll('.relationship-line');
@@ -860,7 +797,758 @@ window.sqlBuilderInterop = {
 
         return { x: newX, y: newY };
     },
+
+    // Highlight domain when selected
+    highlightDomain: function (domainId) {
+        // Remove previous highlights
+        document.querySelectorAll('.domain-container').forEach(domain => {
+            domain.classList.remove('selected');
+        });
+
+        // Add highlight to selected domain
+        const domainElement = document.querySelector(`[data-domain-id="${domainId}"]`);
+        if (domainElement) {
+            domainElement.classList.add('selected');
+
+            // Scroll into view if needed
+            domainElement.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+        }
+    },
+
+    // Update domain color in real-time
+    updateDomainColor: function (domainId, newColor) {
+        const domainElement = document.querySelector(`[data-domain-id="${domainId}"]`);
+        if (domainElement) {
+            domainElement.style.backgroundColor = newColor;
+
+            // Add a subtle animation to show the change
+            domainElement.classList.add('color-updating');
+            setTimeout(() => {
+                domainElement.classList.remove('color-updating');
+            }, 600);
+        }
+    },
+
+    // Enhanced domain bounds updating with animation
+    updateDomainBoundsAnimated: function (domainId, x, y, width, height, animate = true) {
+        debugger;
+        const domainElement = document.querySelector(`[data-domain-id="${domainId}"]`);
+        if (domainElement) {
+            if (animate) {
+                domainElement.classList.add('auto-resizing');
+
+                setTimeout(() => {
+                    domainElement.style.left = `${x}px`;
+                    domainElement.style.top = `${y}px`;
+                    domainElement.style.width = `${width}px`;
+                    domainElement.style.height = `${height}px`;
+
+                    setTimeout(() => {
+                        domainElement.classList.remove('auto-resizing');
+                    }, 600);
+                }, 50);
+            } else {
+                domainElement.style.left = `${x}px`;
+                domainElement.style.top = `${y}px`;
+                domainElement.style.width = `${width}px`;
+                domainElement.style.height = `${height}px`;
+            }
+        }
+    },
+
+    // Show domain bounds during table drag
+    showDomainBounds: function (domainId) {
+        const domainElement = document.querySelector(`[data-domain-id="${domainId}"]`);
+        if (domainElement) {
+            const boundsHighlight = document.createElement('div');
+            boundsHighlight.className = 'domain-bounds-highlight';
+            boundsHighlight.id = `bounds-${domainId}`;
+
+            const rect = domainElement.getBoundingClientRect();
+            const canvasRect = this.canvasElement.getBoundingClientRect();
+
+            boundsHighlight.style.left = `${rect.left - canvasRect.left}px`;
+            boundsHighlight.style.top = `${rect.top - canvasRect.top}px`;
+            boundsHighlight.style.width = `${rect.width}px`;
+            boundsHighlight.style.height = `${rect.height}px`;
+
+            this.canvasElement.appendChild(boundsHighlight);
+
+            // Auto-remove after 2 seconds
+            setTimeout(() => {
+                const highlight = document.getElementById(`bounds-${domainId}`);
+                if (highlight) {
+                    highlight.remove();
+                }
+            }, 2000);
+        }
+    },
+
+    // Hide domain bounds
+    hideDomainBounds: function (domainId) {
+        const highlight = document.getElementById(`bounds-${domainId}`);
+        if (highlight) {
+            highlight.remove();
+        }
+    },
+
+    // Show feedback message
+    showDomainFeedback: function (message, type = 'success') {
+        const feedback = document.createElement('div');
+        feedback.className = `domain-feedback ${type}`;
+        feedback.textContent = message;
+
+        document.body.appendChild(feedback);
+
+        // Auto-remove after 3 seconds
+        setTimeout(() => {
+            feedback.style.opacity = '0';
+            setTimeout(() => {
+                if (feedback.parentNode) {
+                    feedback.parentNode.removeChild(feedback);
+                }
+            }, 300);
+        }, 3000);
+    },
+
+    // Enhanced table drag with domain awareness
+    tableDragStartWithDomainAwareness: function (event) {
+        this.tableInteractionState = 'dragging';
+
+        const tableElement = event.target.closest('.table-card');
+        const tableId = tableElement.getAttribute('data-table-id');
+
+        // Check if table belongs to a domain
+        if (this.dotNetHelper) {
+            this.dotNetHelper.invokeMethodAsync('GetTableDomain', tableId)
+                .then(domainId => {
+                    if (domainId) {
+                        this.showDomainBounds(domainId);
+                    }
+                });
+        }
+
+        console.log('Table drag started with domain awareness');
+    },
+
+    // Enhanced drag end with domain feedback
+    dragEndListenerWithDomainFeedback: function (event) {
+        const target = event.target;
+        const tableId = target.getAttribute('data-table-id');
+
+        this.tableInteractionState = null;
+
+        // Hide any domain bounds highlights
+        document.querySelectorAll('.domain-bounds-highlight').forEach(highlight => {
+            highlight.remove();
+        });
+
+        if (this.dotNetHelper) {
+            this.dotNetHelper.invokeMethodAsync('UpdateTablePosition',
+                tableId,
+                parseFloat(target.getAttribute('data-x')) || 0,
+                parseFloat(target.getAttribute('data-y')) || 0
+            );
+        }
+
+        console.log('Table drag ended with domain feedback');
+    },
+
+    // Get domain constraints for table movement
+    getDomainConstraints: function (tableId) {
+        if (this.dotNetHelper) {
+            return this.dotNetHelper.invokeMethodAsync('GetDomainConstraints', tableId);
+        }
+        return null;
+    },
+
+    // NEW: Check for domain collision during drag
+    checkDomainCollision: function (draggedElement, newX, newY) {
+        const draggedRect = {
+            x: newX,
+            y: newY,
+            width: draggedElement.offsetWidth,
+            height: draggedElement.offsetHeight
+        };
+
+        const domains = document.querySelectorAll('.domain-container');
+
+        for (let domain of domains) {
+            if (domain === draggedElement) continue;
+
+            const domainRect = {
+                x: parseFloat(domain.style.left) || 0,
+                y: parseFloat(domain.style.top) || 0,
+                width: domain.offsetWidth,
+                height: domain.offsetHeight
+            };
+
+            if (this.domainsOverlap(draggedRect, domainRect)) {
+                return true;
+            }
+        }
+
+        return false;
+    },
+
+    // NEW: Check if two domain rectangles overlap
+    domainsOverlap: function (rect1, rect2) {
+        const buffer = 30; // Minimum spacing between domains
+
+        return !(rect1.x + rect1.width + buffer < rect2.x ||
+            rect2.x + rect2.width + buffer < rect1.x ||
+            rect1.y + rect1.height + buffer < rect2.y ||
+            rect2.y + rect2.height + buffer < rect1.y);
+    },
+
+    // NEW: Enhanced domain drag listener with collision detection
+    domainDragMoveListener: function (event) {
+        const target = event.target.closest('.domain-container');
+        if (!target) return;
+
+        let x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+        let y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+
+        // Check for collision with other domains
+        if (this.checkDomainCollision(target, x, y)) {
+            // Find nearest non-colliding position
+            const adjustedPos = this.findNearestNonCollidingDomainPosition(target, x, y);
+            x = adjustedPos.x;
+            y = adjustedPos.y;
+
+            // Visual feedback for collision
+            target.classList.add('collision-detected');
+            setTimeout(() => {
+                target.classList.remove('collision-detected');
+            }, 300);
+        }
+
+        // Update position
+        target.style.left = `${x}px`;
+        target.style.top = `${y}px`;
+        target.setAttribute('data-x', x);
+        target.setAttribute('data-y', y);
+
+        // Update relationship lines
+        this.updateRelationshipLines();
+    },
+
+    // NEW: Find nearest non-colliding position for domain
+    findNearestNonCollidingDomainPosition: function (element, targetX, targetY) {
+        const step = 20;
+        const maxAttempts = 25;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const radius = attempt * step;
+
+            // Try positions in a spiral pattern
+            for (let angle = 0; angle < 360; angle += 45) {
+                const radians = angle * Math.PI / 180;
+                const testX = targetX + Math.cos(radians) * radius;
+                const testY = targetY + Math.sin(radians) * radius;
+
+                if (!this.checkDomainCollision(element, testX, testY)) {
+                    return { x: testX, y: testY };
+                }
+            }
+        }
+
+        // If no position found, return original with offset
+        return { x: targetX + 50, y: targetY + 50 };
+    },
+
+    // NEW: Setup domain interactions with collision detection
+    setupDomainInteractions: function () {
+        interact('.domain-container')
+            .draggable({
+                allowFrom: '.domain-header',
+                listeners: {
+                    start: this.domainDragStart.bind(this),
+                    move: this.domainDragMoveListener.bind(this),
+                    end: this.domainDragEnd.bind(this)
+                },
+                modifiers: [
+                    interact.modifiers.restrictRect({
+                        restriction: 'parent',
+                        endOnly: true
+                    })
+                ]
+            })
+            .resizable({
+                edges: { left: true, right: true, bottom: true, top: true },
+                listeners: {
+                    start: this.domainResizeStart.bind(this),
+                    move: this.domainResizeMove.bind(this),
+                    end: this.domainResizeEnd.bind(this)
+                },
+                modifiers: [
+                    interact.modifiers.restrictSize({
+                        min: { width: 300, height: 200 }
+                    })
+                ]
+            });
+    },
+
+    // NEW: Domain drag start
+    domainDragStart: function (event) {
+        const target = event.target.closest('.domain-container');
+        if (target) {
+            target.classList.add('dragging');
+            console.log('Domain drag started:', target.getAttribute('data-domain-id'));
+        }
+    },
+
+    // NEW: Domain drag end with collision resolution
+    domainDragEnd: function (event) {
+        const target = event.target.closest('.domain-container');
+        if (!target) return;
+
+        target.classList.remove('dragging');
+
+        const domainId = target.getAttribute('data-domain-id');
+        const x = parseFloat(target.style.left) || 0;
+        const y = parseFloat(target.style.top) || 0;
+
+        // Update domain position through C# with collision detection
+        if (this.dotNetHelper && domainId) {
+            this.dotNetHelper.invokeMethodAsync('UpdateDomainPosition', domainId, x, y)
+                .then(result => {
+                    if (result.adjusted) {
+                        // Position was adjusted for collision
+                        target.style.left = `${result.x}px`;
+                        target.style.top = `${result.y}px`;
+                        this.showDomainFeedback(result.message, 'success');
+                    }
+                });
+        }
+
+        console.log('Domain drag ended:', domainId);
+    },
+
+    // NEW: Domain resize start
+    domainResizeStart: function (event) {
+        const target = event.target.closest('.domain-container');
+        if (target) {
+            target.classList.add('resizing');
+        }
+    },
+
+    // NEW: Domain resize move with collision check
+    domainResizeMove: function (event) {
+        const target = event.target;
+        let { x, y } = target.dataset;
+
+        x = (parseFloat(x) || 0) + event.deltaRect.left;
+        y = (parseFloat(y) || 0) + event.deltaRect.top;
+
+        // Check if resize would cause collision
+        const wouldCollide = this.checkDomainCollision(target, x, y);
+
+        if (!wouldCollide) {
+            Object.assign(target.style, {
+                width: `${event.rect.width}px`,
+                height: `${event.rect.height}px`,
+                left: `${x}px`,
+                top: `${y}px`
+            });
+
+            Object.assign(target.dataset, { x, y });
+        } else {
+            // Prevent resize if it would cause collision
+            event.preventDefault();
+            this.showDomainFeedback('Resize blocked to prevent domain overlap', 'warning');
+        }
+
+        this.updateRelationshipLines();
+    },
+
+    // NEW: Domain resize end
+    domainResizeEnd: function (event) {
+        const target = event.target.closest('.domain-container');
+        if (target) {
+            target.classList.remove('resizing');
+
+            // Update domain size in C#
+            const domainId = target.getAttribute('data-domain-id');
+            if (this.dotNetHelper && domainId) {
+                const rect = target.getBoundingClientRect();
+                const canvasRect = this.canvasElement.getBoundingClientRect();
+
+                this.dotNetHelper.invokeMethodAsync('UpdateDomainSize',
+                    domainId, rect.width, rect.height);
+            }
+        }
+    },
+
+    //setupInteractions: function () {
+    //    // Make tables draggable - but prevent dragging when starting from column connectors
+    //    interact('.table-card')
+    //        .draggable({
+    //            inertia: true,
+    //            // Prevent dragging when starting from column connectors or other specific elements
+    //            ignoreFrom: '.column-connector, .btn, .form-check-input, .column-row',
+    //            // Only allow dragging from the header area
+    //            allowFrom: '.table-card-header',
+    //            modifiers: [
+    //                interact.modifiers.restrictRect({
+    //                    restriction: 'parent',
+    //                    endOnly: true
+    //                })
+    //            ],
+    //            autoScroll: true,
+    //            listeners: {
+    //                start: this.tableDragStart.bind(this),
+    //                move: this.dragMoveListener.bind(this),
+    //                end: this.dragEndListener.bind(this)
+    //            }
+    //        })
+    //        .resizable({
+    //            edges: { left: true, right: true, bottom: true, top: true },
+    //            // Prevent resizing when interacting with column connectors
+    //            ignoreFrom: '.column-connector',
+    //            listeners: {
+    //                start: this.tableResizeStart.bind(this),
+    //                move: this.resizeMoveListener.bind(this),
+    //                end: this.tableResizeEnd.bind(this)
+    //            },
+    //            modifiers: [
+    //                interact.modifiers.restrictEdges({
+    //                    outer: 'parent'
+    //                }),
+    //                interact.modifiers.restrictSize({
+    //                    min: { width: 200, height: 150 }
+    //                })
+    //            ],
+    //            inertia: true
+    //        });
+
+    //    // Setup domain interactions
+    //    interact('.domain-container')
+    //        .draggable({
+    //            allowFrom: '.domain-header',
+    //            listeners: {
+    //                move: this.dragMoveListener.bind(this)
+    //            }
+    //        })
+    //        .resizable({
+    //            edges: { left: true, right: true, bottom: true, top: true },
+    //            listeners: {
+    //                move: this.resizeMoveListener.bind(this)
+    //            }
+    //        });
+    //},
+
+    // Update the main setupInteractions to include domain interactions
+    setupInteractions: function () {
+        // Existing table interactions...
+        this.setupTableInteractions();
+
+        // NEW: Setup domain interactions
+        this.setupDomainInteractions();
+    },
+
+    // Separate table interactions for clarity
+    setupTableInteractions: function () {
+        interact('.table-card')
+            .draggable({
+                inertia: true,
+                ignoreFrom: '.column-connector, .btn, .form-check-input, .column-row',
+                allowFrom: '.table-card-header',
+                modifiers: [
+                    interact.modifiers.restrictRect({
+                        restriction: 'parent',
+                        endOnly: true
+                    })
+                ],
+                autoScroll: true,
+                listeners: {
+                    start: this.tableDragStart.bind(this),
+                    move: this.dragMoveListener.bind(this),
+                    end: this.dragEndListener.bind(this)
+                }
+            })
+            .resizable({
+                edges: { left: true, right: true, bottom: true, top: true },
+                ignoreFrom: '.column-connector',
+                listeners: {
+                    start: this.tableResizeStart.bind(this),
+                    move: this.resizeMoveListener.bind(this),
+                    end: this.tableResizeEnd.bind(this)
+                },
+                modifiers: [
+                    interact.modifiers.restrictEdges({
+                        outer: 'parent'
+                    }),
+                    interact.modifiers.restrictSize({
+                        min: { width: 200, height: 150 }
+                    })
+                ],
+                inertia: true
+            });
+    },
+
+    // Enhanced auto-arrange with domain collision awareness
+    autoArrangeDomainsWithoutCollision: function () {
+        if (this.dotNetHelper) {
+            this.dotNetHelper.invokeMethodAsync('AutoArrangeDomains');
+        }
+    },
+
+    updateTableVisibilityForDomain: function (domainId, isVisible) {
+        const tables = document.querySelectorAll(`[data-domain-id="${domainId}"]`);
+        const animationDuration = 300;
+
+        tables.forEach(table => {
+            if (table.classList.contains('table-card')) {
+                if (isVisible) {
+                    // Show tables with animation
+                    this.showTableWithAnimation(table, animationDuration);
+                } else {
+                    // Hide tables with animation
+                    this.hideTableWithAnimation(table, animationDuration);
+                }
+            }
+        });
+
+        // Update relationship lines after visibility change
+        setTimeout(() => {
+            this.updateRelationshipLines();
+        }, animationDuration);
+    },
+
+    // NEW: Show table with smooth animation
+    showTableWithAnimation: function (tableElement, duration = 300) {
+        if (!tableElement) return;
+
+        // Remove hidden state
+        tableElement.classList.remove('hidden-by-domain');
+
+        // Start with collapsed state
+        tableElement.style.transform = 'scale(0.8)';
+        tableElement.style.opacity = '0';
+        tableElement.style.display = 'block';
+        tableElement.style.transition = `all ${duration}ms cubic-bezier(0.34, 1.56, 0.64, 1)`;
+
+        // Animate to full visibility
+        requestAnimationFrame(() => {
+            tableElement.style.transform = 'scale(1)';
+            tableElement.style.opacity = '1';
+        });
+
+        // Clean up transition after animation
+        setTimeout(() => {
+            tableElement.style.transition = '';
+        }, duration);
+    },
+
+    // NEW: Hide table with smooth animation
+    hideTableWithAnimation: function (tableElement, duration = 300) {
+        if (!tableElement) return;
+
+        tableElement.style.transition = `all ${duration}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`;
+
+        // Animate to hidden state
+        tableElement.style.transform = 'scale(0.8)';
+        tableElement.style.opacity = '0';
+
+        // Hide completely after animation
+        setTimeout(() => {
+            tableElement.style.display = 'none';
+            tableElement.classList.add('hidden-by-domain');
+            tableElement.style.transition = '';
+        }, duration);
+    },
+
+    // NEW: Enhanced domain collapse/expand with table management
+    toggleDomainCollapse: function (domainElement) {
+        const domainId = domainElement.getAttribute('data-domain-id');
+        const isCurrentlyCollapsed = domainElement.classList.contains('collapsed');
+
+        // Toggle domain visual state
+        if (isCurrentlyCollapsed) {
+            this.expandDomain(domainElement, domainId);
+        } else {
+            this.collapseDomain(domainElement, domainId);
+        }
+
+        // Update C# state
+        if (this.dotNetHelper) {
+            this.dotNetHelper.invokeMethodAsync('SetDomainCollapsed', domainId, !isCurrentlyCollapsed);
+        }
+    },
+
+    // NEW: Expand domain animation
+    expandDomain: function (domainElement, domainId) {
+        domainElement.classList.remove('collapsed');
+
+        // Get original height from data attribute or calculate
+        const originalHeight = domainElement.getAttribute('data-original-height') || '300';
+
+        // Animate domain expansion
+        domainElement.style.transition = 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+        domainElement.style.height = `${originalHeight}px`;
+
+        // Show tables with delay for smoother effect
+        setTimeout(() => {
+            this.updateTableVisibilityForDomain(domainId, true);
+        }, 200);
+
+        // Clean up transition
+        setTimeout(() => {
+            domainElement.style.transition = '';
+        }, 400);
+    },
+
+    // NEW: Collapse domain animation
+    collapseDomain: function (domainElement, domainId) {
+        // Store original height
+        domainElement.setAttribute('data-original-height', domainElement.offsetHeight);
+
+        // Hide tables first
+        this.updateTableVisibilityForDomain(domainId, false);
+
+        // Animate domain collapse after table hiding
+        setTimeout(() => {
+            domainElement.classList.add('collapsed');
+            domainElement.style.transition = 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+            domainElement.style.height = '50px'; // Collapsed height (header only)
+
+            // Clean up transition
+            setTimeout(() => {
+                domainElement.style.transition = '';
+            }, 400);
+        }, 100);
+    },
+
+    // NEW: Update relationship lines considering table visibility
+    updateRelationshipLinesWithVisibility: function () {
+        const lines = document.querySelectorAll('.relationship-line');
+
+        lines.forEach(line => {
+            const sourceTableId = line.getAttribute('data-source-table-id');
+            const targetTableId = line.getAttribute('data-target-table-id');
+
+            const sourceTable = document.querySelector(`[data-table-id="${sourceTableId}"]`);
+            const targetTable = document.querySelector(`[data-table-id="${targetTableId}"]`);
+
+            // Hide relationship line if either table is hidden
+            const shouldHideLine =
+                (sourceTable && sourceTable.classList.contains('hidden-by-domain')) ||
+                (targetTable && targetTable.classList.contains('hidden-by-domain'));
+
+            if (shouldHideLine) {
+                line.style.display = 'none';
+                line.style.opacity = '0';
+            } else {
+                line.style.display = 'block';
+                line.style.opacity = '1';
+
+                // Update line position if both tables are visible
+                this.updateRelationshipLinePosition(line.getAttribute('data-relationship-id'));
+            }
+        });
+    },
+
+    updateRelationshipLines: function () {
+        this.updateRelationshipLinesWithVisibility();
+    },
+
+    // NEW: Get visible tables count for domain
+    getVisibleTablesInDomain: function (domainId) {
+        const tables = document.querySelectorAll(`[data-domain-id="${domainId}"].table-card`);
+        let visibleCount = 0;
+
+        tables.forEach(table => {
+            if (!table.classList.contains('hidden-by-domain') &&
+                table.style.display !== 'none') {
+                visibleCount++;
+            }
+        });
+
+        return visibleCount;
+    },
+
+    // NEW: Update domain header with table count
+    updateDomainTableCount: function (domainId) {
+        const domainElement = document.querySelector(`[data-domain-id="${domainId}"]`);
+        if (!domainElement) return;
+
+        const countElement = domainElement.querySelector('.domain-table-count');
+        if (countElement) {
+            const visibleCount = this.getVisibleTablesInDomain(domainId);
+            const totalCount = document.querySelectorAll(`[data-domain-id="${domainId}"].table-card`).length;
+            const isCollapsed = domainElement.classList.contains('collapsed');
+
+            countElement.textContent = isCollapsed
+                ? `${totalCount} tables (hidden)`
+                : `${visibleCount}/${totalCount} tables`;
+        }
+    },
+
+    // NEW: Handle domain header click for expand/collapse
+    setupDomainToggleHandlers: function () {
+        document.addEventListener('click', (e) => {
+            const toggleBtn = e.target.closest('.domain-toggle-btn');
+            if (toggleBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const domainElement = toggleBtn.closest('.domain-container');
+                if (domainElement) {
+                    this.toggleDomainCollapse(domainElement);
+                }
+            }
+        });
+    },
+
+    // NEW: Initialize domain collapse functionality
+    initializeDomainCollapse: function () {
+        this.setupDomainToggleHandlers();
+
+        // Set up observer for dynamic domain updates
+        if (window.MutationObserver) {
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.type === 'childList') {
+                        // Update counts when domains are added/removed
+                        const addedDomains = Array.from(mutation.addedNodes)
+                            .filter(node => node.classList && node.classList.contains('domain-container'));
+
+                        addedDomains.forEach(domain => {
+                            const domainId = domain.getAttribute('data-domain-id');
+                            if (domainId) {
+                                this.updateDomainTableCount(domainId);
+                            }
+                        });
+                    }
+                });
+            });
+
+            observer.observe(this.canvasElement, {
+                childList: true,
+                subtree: true
+            });
+        }
+    },
+
 };
+
+const style = document.createElement('style');
+style.textContent = `
+    .color-updating {
+        animation: color-pulse 0.6s ease-in-out;
+    }
+    
+    @keyframes color-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.02); filter: brightness(1.1); }
+    }
+`;
+document.head.appendChild(style);
+
 
 // Export functions
 export function initializeSqlCanvas(element, dotNetHelper) {
@@ -906,6 +1594,33 @@ export function animateTableToDomain(tableId, x, y, duration) {
 export function updateDomainBounds(domainId, x, y, width, height) {
     window.sqlBuilderInterop.updateDomainBounds(domainId, x, y, width, height);
 }
+export function highlightDomain(domainId) {
+    window.sqlBuilderInterop.highlightDomain(domainId);
+}
+
+export function updateDomainColor(domainId, color) {
+    window.sqlBuilderInterop.updateDomainColor(domainId, color);
+}
+
+export function showDomainFeedback(message, type) {
+    window.sqlBuilderInterop.showDomainFeedback(message, type);
+}
+
+export function autoArrangeDomains() {
+    window.sqlBuilderInterop.autoArrangeDomainsWithoutCollision();
+}
+
+export function updateTableVisibilityForDomain(domainId, isVisible) {
+    window.sqlBuilderInterop.updateTableVisibilityForDomain(domainId, isVisible);
+}
+
+export function toggleDomainCollapse(domainElement) {
+    window.sqlBuilderInterop.toggleDomainCollapse(domainElement);
+}
+
+export function updateDomainBoundsAnimated(domainId, x, y, width, height, animate = true) {
+    window.sqlBuilderInterop.updateDomainBoundsAnimated(domainId, x, y, width, height, animate = true);
+}
 
 // Make functions available globally
 window.initializeSqlCanvas = initializeSqlCanvas;
@@ -919,3 +1634,10 @@ window.refreshAllRelationshipLines = refreshAllRelationshipLines;
 window.updateTablePosition = updateTablePosition;
 window.animateTableToDomain = animateTableToDomain;
 window.updateDomainBounds = updateDomainBounds;
+window.highlightDomain = highlightDomain;
+window.updateDomainColor = updateDomainColor;
+window.showDomainFeedback = showDomainFeedback;
+window.autoArrangeDomains = autoArrangeDomains;
+window.updateTableVisibilityForDomain = updateTableVisibilityForDomain;
+window.toggleDomainCollapse = toggleDomainCollapse;
+window.updateDomainBoundsAnimated = updateDomainBoundsAnimated;

@@ -13,6 +13,7 @@ public class TableModel
     public Size Size { get; set; } = new() { Width = 250, Height = 300 };
     public string? DomainId { get; set; }
     public bool IsFromExcel { get; set; }
+    public bool IsVisible { get; set; }
     public Dictionary<string, object> Metadata { get; set; } = new();
 }
 

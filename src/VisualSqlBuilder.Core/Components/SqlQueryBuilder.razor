@@ -24,15 +24,23 @@
             <button class="btn btn-info" type="button" @onclick="ShowCreateDomainModal">
                 <i class="bi bi-diagram-3"></i> Add Domain
             </button>
+            <button class="btn btn-auto-arrange" type="button" @onclick="AutoArrangeDomainsAndTables" disabled="@isAutoArranging">
+                @if (isAutoArranging)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                }
+                else
+                {
+                    <i class="bi bi-grid-3x3-gap me-1"></i>
+                }
+                Auto-Arrange All
+            </button>
 
             <button class="btn btn-warning" type="button" @onclick="SaveLayout">
                 <i class="bi bi-save"></i> Save Layout
             </button>
             <button class="btn btn-secondary" type="button" @onclick="LoadLayout">
                 <i class="bi bi-folder-open"></i> Load Layout
-            </button>
-            <button class="btn btn-outline-info" type="button" @onclick="AutoArrangeTables">
-                <i class="bi bi-grid-3x3-gap"></i> Rearrange Layout
             </button>
         </div>
 
@@ -139,26 +147,69 @@
             <!-- Domains -->
             @foreach (var domain in _queryModel.Domains)
             {
-                <div class="domain-container @(domain.IsCollapsed ? "collapsed" : "")" style="left: @(domain.Position.X)px; top: @(domain.Position.Y)px;
-                                                                width: @(domain.Size.Width)px; height: @(domain.Size.Height)px;
-                                                                background-color: @domain.Color;">
+                var tablesInDomain = _queryModel.Tables.Where(t => t.DomainId == domain.Id).ToList();
+                var visibleTablesCount = tablesInDomain.Count(t => !domain.IsCollapsed);
+
+                <div class="domain-container @(domain.IsCollapsed ? "collapsed" : "")"
+                     data-domain-id="@domain.Id"
+                     @onclick="() => SelectDomain(domain)"
+                     @onclick:stopPropagation="true"
+                     style="left: @(domain.Position.X)px; top: @(domain.Position.Y)px;
+                                                                                     width: @(domain.Size.Width)px; height: @(domain.Size.Height)px;
+                                                                                     background-color: @domain.Color;">
                     <div class="domain-header">
                         <span class="domain-name">@domain.Name</span>
-                        <button class="btn btn-sm btn-link" @onclick="() => ToggleDomain(domain)">
-                            <i class="bi bi-@(domain.IsCollapsed ? "chevron-down" : "chevron-up")"></i>
-                        </button>
+                        <div class="domain-controls">
+                            <span class="domain-table-count">
+                                @if (domain.IsCollapsed)
+                                {
+                                    <text>@tablesInDomain.Count tables (hidden)</text>
+                                }
+                                else
+                                {
+                                    <text>@visibleTablesCount/@tablesInDomain.Count tables</text>
+                                }
+                            </span>
+                            <button class="btn btn-sm btn-link domain-toggle-btn"
+                                    @onclick="() => ToggleDomain(domain)"
+                                    @onclick:stopPropagation="true"
+                                    title="@(domain.IsCollapsed ? "Expand Domain" : "Collapse Domain")">
+                                <i class="bi bi-@(domain.IsCollapsed ? "chevron-down" : "chevron-up")"></i>
+                            </button>
+                        </div>
                     </div>
+
+                    @if (!domain.IsCollapsed)
+                    {
+                        <div class="domain-body">
+                            <!-- Domain content when expanded -->
+                            <div class="domain-info">
+                                <small class="text-muted">Domain bounds:@domain.Size.Width × @domain.Size.Height </small>
+                            </div>
+                        </div>
+                    }
                 </div>
             }
 
             <!-- Tables -->
             @foreach (var table in _queryModel.Tables)
             {
-                <div class="table-card"
+                var domain = !string.IsNullOrEmpty(table.DomainId) ? _queryModel.Domains.FirstOrDefault(d => d.Id == table.DomainId) : null;
+                var isInCollapsedDomain = domain?.IsCollapsed == true;
+                var displayStyle = isInCollapsedDomain ? "display: none;" : "";
+                var cssClasses = $"table-card {(isInCollapsedDomain ? "hidden-by-domain" : "")}";
+
+
+                <div class="@($"{cssClasses} {(isInCollapsedDomain ? "hidden-by-domain" : "")}")"
                      data-table-id="@table.Id"
-                     style="left: @(table.Position.X)px; top: @(table.Position.Y)px;
-                                                width: @(table.Size.Width)px; height: @(table.Size.Height)px;"
+                     data-domain-id="@table.DomainId"
+                     style="left: @(table.Position.X)px;
+                                                                                    top: @(table.Position.Y)px;
+                                                                                    width: @(table.Size.Width)px;
+                                                                                    height: @(table.Size.Height)px;
+                                                                                    @(displayStyle)"
                      @onclick="() => SelectTable(table)">
+
 
                     <div class="table-card-header">
                         <span class="table-card-header-text">@table.Name</span>
@@ -330,40 +381,11 @@
                     </div>
                 </div>
 
-                @*                 <div class="tab-pane fade" id="properties">
-                    @if (_selectedTable != null)
-                    {
-                        <div class="properties-panel">
-                            <h5>Table Properties</h5>
-                            <div class="mb-3">
-                                <label>Name:</label>
-                                <input type="text" class="form-control" @bind="_selectedTable.Name" />
-                            </div>
-                            <div class="mb-3">
-                                <label>Alias:</label>
-                                <input type="text" class="form-control" @bind="_selectedTable.Alias" />
-                            </div>
-                            <div class="mb-3">
-                                <label>Domain:</label>
-                                <select class="form-control" @bind="_selectedTable.DomainId">
-                                    <option value="">None</option>
-                                    @foreach (var domain in _queryModel.Domains)
-                                    {
-                                        <option value="@domain.Id">@domain.Name</option>
-                                    }
-                                </select>
-
-                            </div>
-                        </div>
-                    }
-                </div>
- *@
-
                 <div class="tab-pane fade" id="properties">
                     @if (_selectedTable != null)
                     {
                         <div class="properties-panel">
-                            <h5>Table Properties</h5>
+                            <h5><i class="bi bi-table"></i> Table Properties</h5>
                             <div class="mb-3">
                                 <label class="form-label">Name:</label>
                                 <input type="text" class="form-control" @bind="_selectedTable.Name"
@@ -380,7 +402,7 @@
                                        @bind:after="() => UpdateSqlPreview()" />
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Domain:</label>
+                                <label class="form-label">Domain Assignment:</label>
                                 <select class="form-select" value="@(_selectedTable.DomainId ?? "")"
                                         @onchange="OnTableDomainChanged">
                                     <option value="">None</option>
@@ -390,38 +412,145 @@
                                     }
                                 </select>
                                 <div class="form-text">
-                                    Assigning to a domain will automatically move the table and adjust domain size
+                                    <i class="bi bi-info-circle"></i>
+                                    Table will automatically move to domain and adjust domain bounds
                                 </div>
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label">Position:</label>
-                                <div class="row">
-                                    <div class="col">
-                                        <label class="form-label text-muted">X:</label>
-                                        <input type="number" class="form-control form-control-sm"
+                            <div class="row mb-3">
+                                <div class="col">
+                                    <label class="form-label">Position:</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">X</span>
+                                        <input type="number" class="form-control"
                                                @bind="_selectedTable.Position.X" readonly />
-                                    </div>
-                                    <div class="col">
-                                        <label class="form-label text-muted">Y:</label>
-                                        <input type="number" class="form-control form-control-sm"
+                                        <span class="input-group-text">Y</span>
+                                        <input type="number" class="form-control"
                                                @bind="_selectedTable.Position.Y" readonly />
                                     </div>
                                 </div>
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label">Size:</label>
-                                <div class="row">
-                                    <div class="col">
-                                        <label class="form-label text-muted">Width:</label>
-                                        <input type="number" class="form-control form-control-sm"
+                            <div class="row mb-3">
+                                <div class="col">
+                                    <label class="form-label">Size:</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">W</span>
+                                        <input type="number" class="form-control"
                                                @bind="_selectedTable.Size.Width" readonly />
-                                    </div>
-                                    <div class="col">
-                                        <label class="form-label text-muted">Height:</label>
-                                        <input type="number" class="form-control form-control-sm"
+                                        <span class="input-group-text">H</span>
+                                        <input type="number" class="form-control"
                                                @bind="_selectedTable.Size.Height" readonly />
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    }
+                    else if (_selectedDomain != null)
+                    {
+                        <div class="properties-panel">
+                            <h5><i class="bi bi-diagram-3"></i> Domain Properties</h5>
+                            <div class="mb-3">
+                                <label class="form-label">Name:</label>
+                                <input type="text" class="form-control" @bind="_selectedDomain.Name"
+                                       @bind:after="() => OnDomainNameChanged()" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Background Color:</label>
+                                <div class="row">
+                                    <div class="col-8">
+                                        <input type="color" class="form-control form-control-color"
+                                               @bind="_selectedDomain.Color" @bind:after="() => OnDomainColorChanged()"
+                                               style="height: 38px;" />
+                                    </div>
+                                    <div class="col-4">
+                                        <input type="text" class="form-control" @bind="_selectedDomain.Color"
+                                               @bind:after="() => OnDomainColorChanged()" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col">
+                                    <label class="form-label">Position:</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">X</span>
+                                        <input type="number" class="form-control"
+                                               @bind="_selectedDomain.Position.X" readonly />
+                                        <span class="input-group-text">Y</span>
+                                        <input type="number" class="form-control"
+                                               @bind="_selectedDomain.Position.Y" readonly />
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col">
+                                    <label class="form-label">Size:</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">W</span>
+                                        <input type="number" class="form-control"
+                                               @bind="_selectedDomain.Size.Width" readonly />
+                                        <span class="input-group-text">H</span>
+                                        <input type="number" class="form-control"
+                                               @bind="_selectedDomain.Size.Height" readonly />
+                                    </div>
+                                </div>
+                            </div>
+
+                            @{
+                                var tablesInDomain = _queryModel.Tables.Where(t => t.DomainId == _selectedDomain.Id).ToList();
+                            }
+
+                            <div class="domain-stats">
+                                <h6>Domain Statistics</h6>
+                                <div class="stat-item">
+                                    <span>Tables:</span>
+                                    <strong>@tablesInDomain.Count</strong>
+                                </div>
+                                @if (tablesInDomain.Any())
+                                {
+                                    <div class="stat-item">
+                                        <span>Columns:</span>
+                                        <strong>@tablesInDomain.Sum(t => t.Columns.Count)</strong>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span>Relationships:</span>
+                                        <strong>
+                                            @_queryModel.Relationships.Count(r =>
+                                            tablesInDomain.Any(t => t.Id == r.SourceTableId) ||
+                                            tablesInDomain.Any(t => t.Id == r.TargetTableId))
+                                </strong>
+                            </div>
+                                                        }
+                            </div>
+
+                            @if (tablesInDomain.Any())
+                            {
+                                <div class="mt-3">
+                                    <h6>Tables in Domain</h6>
+                                    <div class="domain-tables-list">
+                                        @foreach (var table in tablesInDomain)
+                                        {
+                                            <div class="domain-table-item">
+                                                <span class="table-name">@table.Name</span>
+                                                <button class="btn btn-sm btn-outline-secondary"
+                                                        @onclick="() => SelectTable(table)"
+                                                        title="Select Table">
+                                                    <i class="bi bi-cursor"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-warning"
+                                                        @onclick="() => UnassignTableFromDomain(table.Id)"
+                                                        title="Remove from Domain">
+                                                    <i class="bi bi-x"></i>
+                                                </button>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="mt-3">
+                                <button class="btn btn-danger btn-sm"
+                                        @onclick="() => ShowDeleteDomainConfirmation(_selectedDomain.Id)">
+                                    <i class="bi bi-trash"></i> Delete Domain
+                                </button>
                             </div>
                         </div>
                     }
@@ -429,9 +558,9 @@
                     {
                         <div class="empty-state">
                             <div class="text-center text-muted">
-                                <i class="bi bi-table fs-1 mb-3"></i>
-                                <p>Select a table to view properties</p>
-                                <p><small>Click on any table to see its properties here</small></p>
+                                <i class="bi bi-cursor fs-1 mb-3"></i>
+                                <p>Select a table or domain to view properties</p>
+                                <p><small>Click on any table or domain to see its properties here</small></p>
                             </div>
                         </div>
                     }
@@ -440,7 +569,7 @@
                     <hr />
                     <div class="domains-section">
                         <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5>Domains (@_queryModel.Domains.Count)</h5>
+                            <h5><i class="bi bi-diagram-3"></i> Domains (@_queryModel.Domains.Count)</h5>
                             <button class="btn btn-sm btn-primary" @onclick="ShowCreateDomainModal">
                                 <i class="bi bi-plus"></i> Add
                             </button>
@@ -452,7 +581,7 @@
                                 @foreach (var domain in _queryModel.Domains)
                                 {
                                     var tablesInDomain = _queryModel.Tables.Count(t => t.DomainId == domain.Id);
-                                    <div class="domain-item">
+                                    <div class="domain-item @(_selectedDomain?.Id == domain.Id ? "selected" : "")">
                                         <div class="domain-header-info">
                                             <div class="domain-color-indicator" style="background-color: @domain.Color"></div>
                                             <div class="domain-details">
@@ -467,7 +596,7 @@
                                                 <i class="bi bi-cursor"></i>
                                             </button>
                                             <button class="btn btn-sm btn-outline-danger"
-                                                    @onclick="() => DeleteDomain(domain.Id)"
+                                                    @onclick="() => ShowDeleteDomainConfirmation(domain.Id)"
                                                     title="Delete Domain">
                                                 <i class="bi bi-trash"></i>
                                             </button>
@@ -485,9 +614,10 @@
                                 </div>
                             </div>
                         }
+
                     </div>
                 </div>
-                
+
                 <div class="tab-pane fade" id="validation">
                     <div class="validation-panel">
                         <h5>Validation Rules</h5>
@@ -510,381 +640,439 @@
                         }
                     </div>
                 </div>
-          
+
             </div>
         </div>
     </div>
 
-    <!-- Add Column Modal -->
-    @if (showAddColumnModal)
-    {
-        <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
-            <div class="modal-dialog modal-lg" role="document">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">
-                            <i class="bi bi-plus-circle"></i>
-                            Add Column to @selectedTableForColumn?.Name
-                        </h5>
-                        <button type="button" class="btn-close" @onclick="CloseAddColumnModal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Column Name:</label>
-                                    <input type="text" class="form-control" @bind="newColumnName"
-                                           placeholder="Enter column name" />
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Data Type:</label>
-                                    <select class="form-select" @bind="newColumnDataType">
-                                        <option value="int">int</option>
-                                        <option value="bigint">bigint</option>
-                                        <option value="varchar">varchar</option>
-                                        <option value="nvarchar">nvarchar</option>
-                                        <option value="char">char</option>
-                                        <option value="nchar">nchar</option>
-                                        <option value="text">text</option>
-                                        <option value="ntext">ntext</option>
-                                        <option value="decimal">decimal</option>
-                                        <option value="float">float</option>
-                                        <option value="real">real</option>
-                                        <option value="money">money</option>
-                                        <option value="datetime">datetime</option>
-                                        <option value="datetime2">datetime2</option>
-                                        <option value="date">date</option>
-                                        <option value="time">time</option>
-                                        <option value="bit">bit</option>
-                                        <option value="uniqueidentifier">uniqueidentifier</option>
-                                        <option value="computed">computed</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
+</div>
 
-                        @if (newColumnDataType != "computed")
-                        {
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Max Length:</label>
-                                        <input type="number" class="form-control" @bind="newColumnMaxLength"
-                                               placeholder="Optional" />
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-check mt-4">
-                                        <input class="form-check-input" type="checkbox" @bind="newColumnIsNullable" />
-                                        <label class="form-check-label">Allow Null</label>
-                                    </div>
-                                </div>
-                            </div>
-                        }
-
-                        @if (newColumnDataType == "computed")
-                        {
+<!-- Add Column Modal -->
+@if (showAddColumnModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-plus-circle"></i>
+                        Add Column to @selectedTableForColumn?.Name
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseAddColumnModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
                             <div class="mb-3">
-                                <label class="form-label">SQL Expression:</label>
-                                <div class="form-text mb-2">
-                                    Available columns: @string.Join(", ", selectedTableForColumn?.Columns?.Where(c => !c.IsComputed).Select(c => c.Name) ?? new List<string>())
-                                </div>
-                                <textarea class="form-control" rows="3" @bind="newColumnExpression"
-                                          placeholder="Example: [FirstName] + ' ' + [LastName]"
-                                          style="font-family: 'Courier New', monospace;"></textarea>
+                                <label class="form-label">Column Name:</label>
+                                <input type="text" class="form-control" @bind="newColumnName"
+                                       placeholder="Enter column name" />
                             </div>
-                        }
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Data Type:</label>
+                                <select class="form-select" @bind="newColumnDataType">
+                                    <option value="int">int</option>
+                                    <option value="bigint">bigint</option>
+                                    <option value="varchar">varchar</option>
+                                    <option value="nvarchar">nvarchar</option>
+                                    <option value="char">char</option>
+                                    <option value="nchar">nchar</option>
+                                    <option value="text">text</option>
+                                    <option value="ntext">ntext</option>
+                                    <option value="decimal">decimal</option>
+                                    <option value="float">float</option>
+                                    <option value="real">real</option>
+                                    <option value="money">money</option>
+                                    <option value="datetime">datetime</option>
+                                    <option value="datetime2">datetime2</option>
+                                    <option value="date">date</option>
+                                    <option value="time">time</option>
+                                    <option value="bit">bit</option>
+                                    <option value="uniqueidentifier">uniqueidentifier</option>
+                                    <option value="computed">computed</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
 
+                    @if (newColumnDataType != "computed")
+                    {
                         <div class="row">
                             <div class="col-md-6">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" @bind="newColumnIsPrimaryKey" />
-                                    <label class="form-check-label">Primary Key</label>
+                                <div class="mb-3">
+                                    <label class="form-label">Max Length:</label>
+                                    <input type="number" class="form-control" @bind="newColumnMaxLength"
+                                           placeholder="Optional" />
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" @bind="newColumnIsForeignKey" />
-                                    <label class="form-check-label">Foreign Key</label>
+                                <div class="form-check mt-4">
+                                    <input class="form-check-input" type="checkbox" @bind="newColumnIsNullable" />
+                                    <label class="form-check-label">Allow Null</label>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseAddColumnModal">Cancel</button>
-                        <button type="button" class="btn btn-primary" @onclick="ConfirmAddColumn"
-                                disabled="@(string.IsNullOrWhiteSpace(newColumnName) || (newColumnDataType == "computed" && string.IsNullOrWhiteSpace(newColumnExpression)))">
-                            Add Column
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
+                    }
 
-    <!-- Column Alias Modal -->
-    @if (showColumnAliasModal)
-    {
-        <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
-            <div class="modal-dialog" role="document">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Set Column Alias</h5>
-                        <button type="button" class="btn-close" @onclick="CloseColumnAliasModal"></button>
-                    </div>
-                    <div class="modal-body">
+                    @if (newColumnDataType == "computed")
+                    {
                         <div class="mb-3">
-                            <label class="form-label">Column: <strong>@selectedColumnForAlias?.Name</strong></label>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Query Alias:</label>
-                            <input type="text" class="form-control" @bind="newColumnAlias"
-                                   placeholder="Enter alias (leave empty to remove)" />
-                            <div class="form-text">This alias will be used in the generated SQL query</div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseColumnAliasModal">Cancel</button>
-                        <button type="button" class="btn btn-primary" @onclick="ConfirmColumnAlias">
-                            Set Alias
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
-
-    <!-- Rename Table Modal -->
-    @if (showRenameModal)
-    {
-        <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
-            <div class="modal-dialog" role="document">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Rename Table</h5>
-                        <button type="button" class="btn-close" @onclick="CloseRenameModal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <p>Enter a new name for the table:</p>
-                        <input type="text" class="form-control" @bind="newTableName" />
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseRenameModal">Cancel</button>
-                        <button type="button" class="btn btn-primary" @onclick="HandleRenameSubmit">Rename</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
-
-    <!-- Join Type Selection Modal -->
-    @if (showJoinTypeModal)
-    {
-        <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
-            <div class="modal-dialog modal-lg" role="document">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">
-                            <i class="bi bi-arrow-left-right"></i>
-                            @(editingRelationshipId != null ? "Edit Relationship" : "Create Relationship")
-                        </h5>
-                        <button type="button" class="btn-close" @onclick="CloseJoinTypeModal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h6>Source Table</h6>
-                                <div class="table-info">
-                                    <strong>@pendingRelationship?.SourceTableName</strong>
-                                    <br />
-                                    Column: @pendingRelationship?.SourceColumnName
-                                </div>
+                            <label class="form-label">SQL Expression:</label>
+                            <div class="form-text mb-2">
+                                Available columns: @string.Join(", ", selectedTableForColumn?.Columns?.Where(c => !c.IsComputed).Select(c => c.Name) ?? new List<string>())
                             </div>
-                            <div class="col-md-6">
-                                <h6>Target Table</h6>
-                                <div class="table-info">
-                                    <strong>@pendingRelationship?.TargetTableName</strong>
-                                    <br />
-                                    Column: @pendingRelationship?.TargetColumnName
-                                </div>
+                            <textarea class="form-control" rows="3" @bind="newColumnExpression"
+                                      placeholder="Example: [FirstName] + ' ' + [LastName]"
+                                      style="font-family: 'Courier New', monospace;"></textarea>
+                        </div>
+                    }
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="newColumnIsPrimaryKey" />
+                                <label class="form-check-label">Primary Key</label>
                             </div>
                         </div>
-
-                        <hr />
-
-                        <div class="mb-3">
-                            <label class="form-label">Join Type:</label>
-                            <div class="join-type-selection">
-                                @foreach (var joinType in Enum.GetValues<JoinType>())
-                                {
-                                    <div class="form-check join-type-option">
-                                        <input class="form-check-input" type="radio"
-                                               name="joinType"
-                                               id="join_@joinType"
-                                               value="@joinType"
-                                               @onchange="@(e => OnJoinTypeChanged(e))"
-                                               checked="@(selectedJoinType == joinType)" />
-                                        <label class="form-check-label" for="join_@joinType">
-                                            <strong style="color: @GetJoinTypeColor(joinType);">@GetJoinTypeDisplayName(joinType)</strong>
-                                            <br />
-                                            <small class="text-muted">@GetJoinTypeDescription(joinType)</small>
-                                        </label>
-                                    </div>
-                                }
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="newColumnIsForeignKey" />
+                                <label class="form-check-label">Foreign Key</label>
                             </div>
                         </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Cardinality:</label>
-                            <select class="form-select" @bind="selectedCardinality">
-                                <option value="1:1">One-to-One (1:1)</option>
-                                <option value="1:N">One-to-Many (1:N)</option>
-                                <option value="N:1">Many-to-One (N:1)</option>
-                                <option value="N:N">Many-to-Many (N:N)</option>
-                            </select>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Relationship Name (Optional):</label>
-                            <input type="text" class="form-control" @bind="relationshipName"
-                                   placeholder="e.g., CustomerOrders, UserRoles" />
-                        </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseJoinTypeModal">Cancel</button>
-                        <button type="button" class="btn btn-primary" @onclick="ConfirmRelationship">
-                            @(editingRelationshipId != null ? "Update Relationship" : "Create Relationship")
-                        </button>
-                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAddColumnModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ConfirmAddColumn"
+                            disabled="@(string.IsNullOrWhiteSpace(newColumnName) || (newColumnDataType == "computed" && string.IsNullOrWhiteSpace(newColumnExpression)))">
+                        Add Column
+                    </button>
                 </div>
             </div>
         </div>
-    }
+    </div>
+}
 
-    <!-- Query Results -->
-    @if (_queryResults != null)
-    {
-        <div class="query-results">
-            <h5>Query Results (@_queryResults.Rows.Count rows)</h5>
-            <div class="table-responsive">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            @foreach (System.Data.DataColumn column in _queryResults.Columns)
+<!-- Column Alias Modal -->
+@if (showColumnAliasModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Set Column Alias</h5>
+                    <button type="button" class="btn-close" @onclick="CloseColumnAliasModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Column: <strong>@selectedColumnForAlias?.Name</strong></label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Query Alias:</label>
+                        <input type="text" class="form-control" @bind="newColumnAlias"
+                               placeholder="Enter alias (leave empty to remove)" />
+                        <div class="form-text">This alias will be used in the generated SQL query</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseColumnAliasModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ConfirmColumnAlias">
+                        Set Alias
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Rename Table Modal -->
+@if (showRenameModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Rename Table</h5>
+                    <button type="button" class="btn-close" @onclick="CloseRenameModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Enter a new name for the table:</p>
+                    <input type="text" class="form-control" @bind="newTableName" />
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseRenameModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="HandleRenameSubmit">Rename</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Join Type Selection Modal -->
+@if (showJoinTypeModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-arrow-left-right"></i>
+                        @(editingRelationshipId != null ? "Edit Relationship" : "Create Relationship")
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseJoinTypeModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Source Table</h6>
+                            <div class="table-info">
+                                <strong>@pendingRelationship?.SourceTableName</strong>
+                                <br />
+                                Column: @pendingRelationship?.SourceColumnName
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Target Table</h6>
+                            <div class="table-info">
+                                <strong>@pendingRelationship?.TargetTableName</strong>
+                                <br />
+                                Column: @pendingRelationship?.TargetColumnName
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr />
+
+                    <div class="mb-3">
+                        <label class="form-label">Join Type:</label>
+                        <div class="join-type-selection">
+                            @foreach (var joinType in Enum.GetValues<JoinType>())
                             {
-                                <th>@column.ColumnName</th>
+                                <div class="form-check join-type-option">
+                                    <input class="form-check-input" type="radio"
+                                           name="joinType"
+                                           id="join_@joinType"
+                                           value="@joinType"
+                                           @onchange="@(e => OnJoinTypeChanged(e))"
+                                           checked="@(selectedJoinType == joinType)" />
+                                    <label class="form-check-label" for="join_@joinType">
+                                        <strong style="color: @GetJoinTypeColor(joinType);">@GetJoinTypeDisplayName(joinType)</strong>
+                                        <br />
+                                        <small class="text-muted">@GetJoinTypeDescription(joinType)</small>
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Cardinality:</label>
+                        <select class="form-select" @bind="selectedCardinality">
+                            <option value="1:1">One-to-One (1:1)</option>
+                            <option value="1:N">One-to-Many (1:N)</option>
+                            <option value="N:1">Many-to-One (N:1)</option>
+                            <option value="N:N">Many-to-Many (N:N)</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Relationship Name (Optional):</label>
+                        <input type="text" class="form-control" @bind="relationshipName"
+                               placeholder="e.g., CustomerOrders, UserRoles" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseJoinTypeModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ConfirmRelationship">
+                        @(editingRelationshipId != null ? "Update Relationship" : "Create Relationship")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Query Results -->
+@if (_queryResults != null)
+{
+    <div class="query-results">
+        <h5>Query Results (@_queryResults.Rows.Count rows)</h5>
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        @foreach (System.Data.DataColumn column in _queryResults.Columns)
+                        {
+                            <th>@column.ColumnName</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (System.Data.DataRow row in _queryResults.Rows)
+                    {
+                        <tr>
+                            @foreach (var item in row.ItemArray)
+                            {
+                                <td>@item?.ToString()</td>
                             }
                         </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (System.Data.DataRow row in _queryResults.Rows)
-                        {
-                            <tr>
-                                @foreach (var item in row.ItemArray)
-                                {
-                                    <td>@item?.ToString()</td>
-                                }
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<!-- Connection Modal -->
+@if (_showConnectionModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Database Connection</h5>
+                    <button type="button" class="btn-close" @onclick="CloseConnectionDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Connection String:</label>
+                        <textarea class="form-control" @bind="ConnectionString" rows="3"
+                                  placeholder="Server=localhost;Database=YourDB;User Id=sa;Password=YourPassword;TrustServerCertificate=True"></textarea>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_connectionError))
+                    {
+                        <div class="alert alert-danger">
+                            @_connectionError
+                        </div>
+                    }
+                    @if (_isConnecting)
+                    {
+                        <div class="alert alert-info">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                            Connecting to database...
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseConnectionDialog">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ConnectToDatabase" disabled="@_isConnecting">
+                        Connect
+                    </button>
+                </div>
             </div>
         </div>
-    }
+    </div>
+}
 
-    <!-- Connection Modal -->
-    @if (_showConnectionModal)
-    {
-        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Database Connection</h5>
-                        <button type="button" class="btn-close" @onclick="CloseConnectionDialog"></button>
+<!-- Excel Upload Modal -->
+@if (_showExcelModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Upload Excel File</h5>
+                    <button type="button" class="btn-close" @onclick="CloseExcelDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- ExcelUpload component would go here -->
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+
+<!-- Create Domain Modal -->
+@if (showCreateDomainModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-diagram-3"></i> Create Domain
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseCreateDomainModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Domain Name:</label>
+                        <input type="text" class="form-control" @bind="newDomainName"
+                               placeholder="e.g., User Management, Orders, Inventory" />
                     </div>
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label">Connection String:</label>
-                            <textarea class="form-control" @bind="ConnectionString" rows="3"
-                                      placeholder="Server=localhost;Database=YourDB;User Id=sa;Password=YourPassword;TrustServerCertificate=True"></textarea>
-                        </div>
-                        @if (!string.IsNullOrEmpty(_connectionError))
-                        {
-                            <div class="alert alert-danger">
-                                @_connectionError
+                    <div class="mb-3">
+                        <label class="form-label">Background Color:</label>
+                        <div class="row">
+                            <div class="col-8">
+                                <input type="color" class="form-control form-control-color"
+                                       @bind="newDomainColor" style="height: 38px;" />
                             </div>
-                        }
-                        @if (_isConnecting)
-                        {
-                            <div class="alert alert-info">
-                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                                Connecting to database...
+                            <div class="col-4">
+                                <input type="text" class="form-control" @bind="newDomainColor"
+                                       placeholder="#e3f2fd" />
                             </div>
-                        }
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseConnectionDialog">Cancel</button>
-                        <button type="button" class="btn btn-primary" @onclick="ConnectToDatabase" disabled="@_isConnecting">
-                            Connect
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
-
-    <!-- Excel Upload Modal -->
-    @if (_showExcelModal)
-    {
-        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Upload Excel File</h5>
-                        <button type="button" class="btn-close" @onclick="CloseExcelDialog"></button>
-                    </div>
-                    <div class="modal-body">
-                        <!-- ExcelUpload component would go here -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
-
-
-    <!-- Create Domain Modal -->
-    @if (showCreateDomainModal)
-    {
-        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Create Domain</h5>
-                        <button type="button" class="btn-close" @onclick="CloseCreateDomainModal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label">Domain Name:</label>
-                            <input type="text" class="form-control" @bind="newDomainName" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Color:</label>
-                            <input type="color" class="form-control form-control-color" @bind="newDomainColor" />
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseCreateDomainModal">Cancel</button>
-                        <button type="button" class="btn btn-primary" @onclick="ConfirmCreateDomain">Create Domain</button>
+                    <div class="domain-preview">
+                        <label class="form-label">Preview:</label>
+                        <div class="domain-preview-box" style="background-color: @newDomainColor;">
+                            <div class="domain-preview-header">
+                                @(string.IsNullOrWhiteSpace(newDomainName) ? "Domain Name" : newDomainName)
+                            </div>
+                        </div>
                     </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseCreateDomainModal">
+                        Cancel
+                    </button>
+                    <button type="button" class="btn btn-primary" @onclick="ConfirmCreateDomain"
+                            disabled="@string.IsNullOrWhiteSpace(newDomainName)">
+                        Create Domain
+                    </button>
                 </div>
             </div>
         </div>
-    }
+    </div>
+}
+
+<!-- Delete Domain Confirmation Modal -->
+@if (_showDeleteDomainConfirmation)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger">
+                        <i class="bi bi-exclamation-triangle"></i> Delete Domain
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseDeleteDomainConfirmation"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        @_deleteDomainWarning
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseDeleteDomainConfirmation">
+                        Cancel
+                    </button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteDomain">
+                        <i class="bi bi-trash"></i> Delete Domain
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 
-</div>
+
 
 @code {
     private QueryModel _queryModel = new();
@@ -976,7 +1164,7 @@
                 dotNetHelper = DotNetObjectReference.Create(this);
 
                 _jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
-                    "import", "./_content/VisualSqlBuilder.Core/visual-sql-builder.js");
+                "import", "./_content/VisualSqlBuilder.Core/visual-sql-builder.js");
 
                 await InitializeCanvas();
                 await JSRuntime.InvokeVoidAsync("console.log", "Canvas initialization completed");
@@ -1134,8 +1322,8 @@
         {
             // Get all tables that have relationships
             var connectedTables = _queryModel.Tables
-                .Where(t => _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id))
-                .ToList();
+            .Where(t => _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id))
+            .ToList();
 
             // Arrange connected tables in a hierarchical layout
             if (connectedTables.Any())
@@ -1275,10 +1463,10 @@
 
         // Find root tables (tables with most connections or primary key tables)
         var rootTables = connectedTables
-            .OrderByDescending(t => graph[t.Id].Count)
-            .ThenByDescending(t => t.Columns.Any(c => c.IsPrimaryKey))
-            .Take(tablesPerRow)
-            .ToList();
+        .OrderByDescending(t => graph[t.Id].Count)
+        .ThenByDescending(t => t.Columns.Any(c => c.IsPrimaryKey))
+        .Take(tablesPerRow)
+        .ToList();
 
         // Position root tables first
         foreach (var table in rootTables)
@@ -1428,7 +1616,16 @@
 
     public async Task ShowExcelUpload()
     {
-        await JSRuntime.InvokeVoidAsync("triggerClick", "excelFileInput");
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("triggerClick", "excelFileInput");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in ShowExcelUpload: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"ShowExcelUpload failed: {ex}");
+        }
+
         StateHasChanged();
     }
 
@@ -1552,7 +1749,7 @@
     {
         _queryModel.Tables.Remove(table);
         _queryModel.Relationships.RemoveAll(r =>
-            r.SourceTableId == table.Id || r.TargetTableId == table.Id);
+        r.SourceTableId == table.Id || r.TargetTableId == table.Id);
         UpdateSqlPreview();
         StateHasChanged();
     }
@@ -1562,10 +1759,66 @@
         ShowJoinTypeModal(relationship.Id);
     }
 
-    private void ToggleDomain(DomainModel domain)
+    private async Task ToggleDomain(DomainModel domain)
     {
         domain.IsCollapsed = !domain.IsCollapsed;
+
+        await UpdateTableVisibilityForDomain(domain.Id, !domain.IsCollapsed);
+
+        StateHasChanged();
     }
+
+    // Method to update table visibility for a specific domain
+    private async Task UpdateTableVisibilityForDomain(string domainId, bool isVisible)
+    {
+        try
+        {
+            var tablesInDomain = _queryModel.Tables.Where(t => t.DomainId == domainId).ToList();
+
+            foreach (var table in tablesInDomain)
+            {
+                // Update table visibility state (you might need to add this property to TableModel)
+                table.IsVisible = isVisible;
+            }
+
+            // Update the DOM through JavaScript
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("updateTableVisibilityForDomain", domainId, isVisible);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in UpdateTableVisibilityForDomain (domainId={domainId}): {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"UpdateTableVisibilityForDomain failed: {ex}");
+        }
+
+        StateHasChanged();
+    }
+
+    // JavaScript callable method for domain collapse/expand
+    [JSInvokable]
+    public async Task ToggleDomainFromJS(string domainId)
+    {
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == domainId);
+        if (domain != null)
+        {
+            await ToggleDomain(domain);
+        }
+    }
+
+    // Method to show/hide all tables in domain
+    [JSInvokable]
+    public async Task SetDomainCollapsed(string domainId, bool collapsed)
+    {
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == domainId);
+        if (domain != null)
+        {
+            domain.IsCollapsed = collapsed;
+            await UpdateTableVisibilityForDomain(domainId, !collapsed);
+        }
+    }
+
 
     private void AddValidationRule()
     {
@@ -1600,8 +1853,8 @@
     {
         // Only include tables that have relationships or selected columns
         var relevantTables = _queryModel.Tables.Where(t =>
-            t.Columns.Any(c => c.IsSelected) ||
-            _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
+        t.Columns.Any(c => c.IsSelected) ||
+        _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
         ).ToList();
 
         if (!relevantTables.Any())
@@ -1613,12 +1866,12 @@
 
         // Exclude orphan tables (tables with no relationships) unless they have selected columns
         var tablesWithRelationships = _queryModel.Tables.Where(t =>
-            _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
+        _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
         ).ToList();
 
         var orphanTablesWithSelectedColumns = _queryModel.Tables.Where(t =>
-            !_queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id) &&
-            t.Columns.Any(c => c.IsSelected)
+        !_queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id) &&
+        t.Columns.Any(c => c.IsSelected)
         ).ToList();
 
         var finalTables = tablesWithRelationships.Concat(orphanTablesWithSelectedColumns).ToList();
@@ -1635,9 +1888,9 @@
         {
             Tables = finalTables,
             Relationships = _queryModel.Relationships.Where(r =>
-                finalTables.Any(t => t.Id == r.SourceTableId) &&
-                finalTables.Any(t => t.Id == r.TargetTableId)
-            ).ToList()
+            finalTables.Any(t => t.Id == r.SourceTableId) &&
+            finalTables.Any(t => t.Id == r.TargetTableId)
+        ).ToList()
         };
 
         UpdateSqlPreview(queryModelForGeneration);
@@ -1694,8 +1947,10 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error saving layout: {ex.Message}");
+            Console.WriteLine($"Error in SaveLayout: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"SaveLayout failed: {ex}");
         }
+
     }
 
     private async Task LoadLayout()
@@ -1720,29 +1975,56 @@
 
     private async Task ZoomIn()
     {
-        _zoomLevel = Math.Min(_zoomLevel * 1.2, 3.0);
-        if (_jsModule != null)
+        try
         {
-            await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
+            _zoomLevel = Math.Min(_zoomLevel * 1.2, 3.0);
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
+            }
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in ZoomIn: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"ZoomIn failed: {ex}");
+        }
+
     }
 
     private async Task ZoomOut()
     {
-        _zoomLevel = Math.Max(_zoomLevel / 1.2, 0.3);
-        if (_jsModule != null)
+        try
         {
-            await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
+            _zoomLevel = Math.Max(_zoomLevel / 1.2, 0.3);
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
+            }
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in ZoomOut: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"ZoomOut failed: {ex}");
+        }
+
     }
 
     private async Task ResetZoom()
     {
-        _zoomLevel = 1.0;
-        if (_jsModule != null)
+        try
         {
-            await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
+            _zoomLevel = 1.0;
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("setCanvasZoom", _zoomLevel);
+            }
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in ResetZoom: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"ResetZoom failed: {ex}");
+        }
+
     }
 
     // Modal event handlers
@@ -1808,10 +2090,19 @@
     //Refresh relationship diagram
     private async Task RefreshRelationshipDiagram()
     {
-        if (_jsModule != null)
+        try
         {
-            await _jsModule.InvokeVoidAsync("refreshAllRelationshipLines");
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("refreshAllRelationshipLines");
+            }
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in RefreshRelationshipDiagram: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"RefreshRelationshipDiagram failed: {ex}");
+        }
+
         StateHasChanged();
     }
 
@@ -1846,25 +2137,9 @@
         if (!string.IsNullOrWhiteSpace(newDomainName))
         {
             CreateDomain(newDomainName, new Position { X = 100, Y = 100 },
-                        new Size { Width = 400, Height = 300 }, newDomainColor);
+            new Size { Width = 400, Height = 300 }, newDomainColor);
             CloseCreateDomainModal();
         }
-    }
-
-    private void CreateDomain(string name, Position position, Size size, string color)
-    {
-        var domain = new DomainModel
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = name,
-            Position = position,
-            Size = size,
-            Color = color,
-            IsCollapsed = false
-        };
-
-        _queryModel.Domains.Add(domain);
-        StateHasChanged();
     }
 
     // Add these methods to your SqlQueryBuilder.razor component
@@ -1911,11 +2186,20 @@
         table.Position.X = newPosition.X;
         table.Position.Y = newPosition.Y;
 
-        // Update the DOM element position
-        if (_jsModule != null)
+        try
         {
-            await _jsModule.InvokeVoidAsync("updateTablePosition", table.Id, newPosition.X, newPosition.Y);
+            // Update the DOM element position
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("updateTablePosition", table.Id, newPosition.X, newPosition.Y);
+            }
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in MoveTableToDomain: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"MoveTableToDomain failed: {ex}");
+        }
+
     }
 
     private Position FindOptimalPositionInDomain(TableModel table, DomainModel domain)
@@ -1926,8 +2210,8 @@
 
         // Get tables already in this domain
         var tablesInDomain = _queryModel.Tables
-            .Where(t => t.DomainId == domain.Id && t.Id != table.Id)
-            .ToList();
+        .Where(t => t.DomainId == domain.Id && t.Id != table.Id)
+        .ToList();
 
         // Start position (top-left of domain with padding)
         var startX = domain.Position.X + padding;
@@ -1975,10 +2259,10 @@
         var testRect = new Rectangle { X = x, Y = y, Width = width, Height = height };
 
         return occupiedPositions.Any(occupied =>
-            testRect.X < occupied.X + occupied.Width + 10 &&
-            testRect.X + testRect.Width + 10 > occupied.X &&
-            testRect.Y < occupied.Y + occupied.Height + 10 &&
-            testRect.Y + testRect.Height + 10 > occupied.Y
+        testRect.X < occupied.X + occupied.Width + 10 &&
+        testRect.X + testRect.Width + 10 > occupied.X &&
+        testRect.Y < occupied.Y + occupied.Height + 10 &&
+        testRect.Y + testRect.Height + 10 > occupied.Y
         );
     }
 
@@ -2031,6 +2315,904 @@
             var newDomainId = e.Value.ToString();
             await AssignTableToDomain(_selectedTable.Id, newDomainId);
         }
+    }
+
+    // Add these methods to your SqlQueryBuilder.razor component
+
+    // Domain selection for properties editing
+    private DomainModel? _selectedDomain;
+
+    private async Task SelectDomain(DomainModel domain)
+    {
+        _selectedDomain = domain;
+        // Clear table selection when domain is selected
+        _selectedTable = null;
+        StateHasChanged();
+
+        try
+        {
+            // Optional: Highlight the domain visually
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("highlightDomain", domain.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in SelectDomain: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"SelectDomain failed: {ex}");
+        }
+    }
+
+    private async Task DeleteDomain(string domainId)
+    {
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == domainId);
+        if (domain == null) return;
+
+        // Get tables currently assigned to this domain
+        var tablesInDomain = _queryModel.Tables.Where(t => t.DomainId == domainId).ToList();
+
+        // Confirm deletion if domain contains tables
+        if (tablesInDomain.Any())
+        {
+            // You might want to show a confirmation modal here
+            // For now, we'll just unassign the tables
+            foreach (var table in tablesInDomain)
+            {
+                table.DomainId = null;
+            }
+        }
+
+        // Remove the domain
+        _queryModel.Domains.Remove(domain);
+
+        // Clear selection if deleted domain was selected
+        if (_selectedDomain?.Id == domainId)
+        {
+            _selectedDomain = null;
+        }
+
+        StateHasChanged();
+        UpdateSqlPreview();
+    }
+
+    // Enhanced delete with confirmation modal
+    private string? _domainIdToDelete;
+    private bool _showDeleteDomainConfirmation = false;
+    private string _deleteDomainWarning = "";
+
+    private void ShowDeleteDomainConfirmation(string domainId)
+    {
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == domainId);
+        if (domain == null) return;
+
+        var tablesInDomain = _queryModel.Tables.Count(t => t.DomainId == domainId);
+
+        _domainIdToDelete = domainId;
+        _deleteDomainWarning = tablesInDomain > 0
+        ? $"This will remove the domain '{domain.Name}' and unassign {tablesInDomain} table(s). This action cannot be undone."
+        : $"This will permanently delete the domain '{domain.Name}'. This action cannot be undone.";
+
+        _showDeleteDomainConfirmation = true;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmDeleteDomain()
+    {
+        if (!string.IsNullOrEmpty(_domainIdToDelete))
+        {
+            await DeleteDomain(_domainIdToDelete);
+            CloseDeleteDomainConfirmation();
+        }
+    }
+
+    private void CloseDeleteDomainConfirmation()
+    {
+        _domainIdToDelete = null;
+        _deleteDomainWarning = "";
+        _showDeleteDomainConfirmation = false;
+        StateHasChanged();
+    }
+
+
+    private void OnDomainNameChanged()
+    {
+        if (_selectedDomain != null)
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnDomainColorChanged()
+    {
+        if (_selectedDomain != null)
+        {
+            StateHasChanged();
+
+            try
+            {
+                // Update the visual domain color in real-time
+                if (_jsModule != null)
+                {
+                    await _jsModule.InvokeVoidAsync("updateDomainColor", _selectedDomain.Id, _selectedDomain.Color);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in OnDomainColorChanged: {ex}");
+                await JSRuntime.InvokeVoidAsync("console.error", $"OnDomainColorChanged failed: {ex}");
+            }
+
+        }
+    }
+
+    // JavaScript-callable method for domain selection from canvas
+    [JSInvokable]
+    public void SelectDomainFromCanvas(string domainId)
+    {
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == domainId);
+        if (domain != null)
+        {
+            SelectDomain(domain);
+        }
+    }
+
+    private async Task UnassignTableFromDomain(string tableId)
+    {
+        var table = _queryModel.Tables.FirstOrDefault(t => t.Id == tableId);
+        if (table != null)
+        {
+            var oldDomainId = table.DomainId;
+            table.DomainId = null;
+
+            // Adjust the domain size after removing table
+            if (!string.IsNullOrEmpty(oldDomainId))
+            {
+                await AdjustDomainSize(oldDomainId);
+            }
+
+            StateHasChanged();
+            UpdateSqlPreview();
+            await RefreshRelationshipDiagram();
+        }
+    }
+
+    // Add these final helper methods to your SqlQueryBuilder.razor component
+
+    [JSInvokable]
+    public async Task<string?> GetTableDomain(string tableId)
+    {
+        var table = _queryModel.Tables.FirstOrDefault(t => t.Id == tableId);
+        return table?.DomainId;
+    }
+
+    [JSInvokable]
+    public async Task<object> GetTableDomainConstraints(string tableId, double newX, double newY)
+    {
+        var table = _queryModel.Tables.FirstOrDefault(t => t.Id == tableId);
+        if (table == null || string.IsNullOrEmpty(table.DomainId))
+        {
+            return new { x = newX, y = newY }; // No constraints
+        }
+
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == table.DomainId);
+        if (domain == null)
+        {
+            return new { x = newX, y = newY }; // No constraints
+        }
+
+        const int padding = 20;
+        const int headerHeight = 40;
+
+        // Calculate domain boundaries
+        var minX = domain.Position.X + padding;
+        var minY = domain.Position.Y + headerHeight + padding;
+        var maxX = domain.Position.X + domain.Size.Width - table.Size.Width - padding;
+        var maxY = domain.Position.Y + domain.Size.Height - table.Size.Height - padding;
+
+        // Constrain the position within domain bounds
+        var constrainedX = Math.Max(minX, Math.Min(maxX, newX));
+        var constrainedY = Math.Max(minY, Math.Min(maxY, newY));
+
+        return new { x = constrainedX, y = constrainedY };
+    }
+
+    [JSInvokable]
+    public async Task<object> GetDomainConstraints(string tableId)
+    {
+        var table = _queryModel.Tables.FirstOrDefault(t => t.Id == tableId);
+        if (table == null || string.IsNullOrEmpty(table.DomainId))
+        {
+            return new { hasDomain = false };
+        }
+
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == table.DomainId);
+        if (domain == null)
+        {
+            return new { hasDomain = false };
+        }
+
+        const int padding = 20;
+        const int headerHeight = 40;
+
+        return new
+        {
+            hasDomain = true,
+            domainId = domain.Id,
+            domainName = domain.Name,
+            minX = domain.Position.X + padding,
+            minY = domain.Position.Y + headerHeight + padding,
+            maxX = domain.Position.X + domain.Size.Width - table.Size.Width - padding,
+            maxY = domain.Position.Y + domain.Size.Height - table.Size.Height - padding
+        };
+    }
+
+    // Enhanced domain creation with positioning
+    private async Task CreateDomainAtPosition(string name, int x, int y, string color)
+    {
+        var domain = new DomainModel
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = name,
+            Position = new Position { X = x, Y = y },
+            Size = new Size { Width = 400, Height = 300 },
+            Color = color,
+            IsCollapsed = false
+        };
+
+        _queryModel.Domains.Add(domain);
+
+        try
+        {
+            // Show success feedback
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("showDomainFeedback", $"Domain '{name}' created successfully", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in CreateDomainAtPosition: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"CreateDomainAtPosition failed: {ex}");
+        }
+
+
+        StateHasChanged();
+    }
+
+    // Method to handle domain creation from canvas right-click
+    [JSInvokable]
+    public void CreateDomainAtMousePosition(int x, int y)
+    {
+        var domainName = $"Domain {_queryModel.Domains.Count + 1}";
+        CreateDomainAtPosition(domainName, x - 200, y - 150, "#e3f2fd");
+    }
+
+    [JSInvokable]
+    public async Task AutoArrangeDomainsAndTables()
+    {
+        if (isAutoArranging) return;
+
+        isAutoArranging = true;
+        StateHasChanged();
+
+        try
+        {
+            // Step 1: Auto-arrange domains first
+            await AutoArrangeDomains();
+            await Task.Delay(100); // Small delay for visual effect
+
+            // Step 2: Auto-arrange tables within their domains
+            await AutoArrangeTablesWithinDomains();
+            await Task.Delay(100);
+
+            // Step 3: Auto-arrange orphan tables (not in domains)
+            await AutoArrangeOrphanTables();
+
+            // Step 4: Update relationships
+            await RefreshRelationshipDiagram();
+
+            UpdateSqlPreview();
+            StateHasChanged();
+
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("showDomainFeedback",
+                    "All domains and tables auto-arranged successfully", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error during auto-arrangement: {ex.Message}");
+
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("showDomainFeedback",
+                    "Error during auto-arrangement", "error");
+            }
+        }
+        finally
+        {
+            isAutoArranging = false;
+            StateHasChanged();
+        }
+    }
+
+    // Auto-arrange tables within their assigned domains
+    private async Task AutoArrangeTablesWithinDomains()
+    {
+        var domainsWithTables = _queryModel.Domains
+            .Where(d => _queryModel.Tables.Any(t => t.DomainId == d.Id))
+            .ToList();
+
+        foreach (var domain in domainsWithTables)
+        {
+            var tablesInDomain = _queryModel.Tables
+                .Where(t => t.DomainId == domain.Id)
+                .ToList();
+
+            if (!tablesInDomain.Any()) continue;
+
+            const int tablePadding = 20;
+            const int headerHeight = 40;
+            const int tablesPerRow = 2;
+
+            int currentX = domain.Position.X + tablePadding;
+            int currentY = domain.Position.Y + headerHeight + tablePadding;
+            int maxHeightInRow = 0;
+            int tableIndex = 0;
+
+            foreach (var table in tablesInDomain)
+            {
+                table.Position.X = currentX;
+                table.Position.Y = currentY;
+
+                currentX += table.Size.Width + tablePadding;
+                maxHeightInRow = Math.Max(maxHeightInRow, table.Size.Height);
+
+                tableIndex++;
+                if (tableIndex % tablesPerRow == 0)
+                {
+                    currentX = domain.Position.X + tablePadding;
+                    currentY += maxHeightInRow + tablePadding;
+                    maxHeightInRow = 0;
+                }
+            }
+
+            // Adjust domain size to fit all tables
+            await AdjustDomainSizeWithCollisionDetection(domain.Id);
+        }
+    }
+
+    // Auto-arrange tables that don't belong to any domain
+    private async Task AutoArrangeOrphanTables()
+    {
+        var orphanTables = _queryModel.Tables
+            .Where(t => string.IsNullOrEmpty(t.DomainId))
+            .ToList();
+
+        if (!orphanTables.Any()) return;
+
+        // Find available space to the right of domains
+        int startX = 50;
+        if (_queryModel.Domains.Any())
+        {
+            startX = _queryModel.Domains.Max(d => d.Position.X + d.Size.Width) + 100;
+        }
+
+        int currentX = startX;
+        int currentY = 50;
+        int maxHeightInRow = 0;
+        const int tableSpacing = 320;
+        const int rowSpacing = 200;
+        const int tablesPerRow = 3;
+
+        foreach (var table in orphanTables)
+        {
+            table.Position.X = currentX;
+            table.Position.Y = currentY;
+
+            currentX += tableSpacing;
+            maxHeightInRow = Math.Max(maxHeightInRow, table.Size.Height);
+
+            if (currentX > startX + (tableSpacing * tablesPerRow))
+            {
+                currentX = startX;
+                currentY += maxHeightInRow + rowSpacing;
+                maxHeightInRow = 0;
+            }
+        }
+    }
+
+    // Method to detect and resolve domain overlaps
+    private async Task ResolveDomainOverlaps()
+    {
+        var overlaps = DetectDomainOverlaps();
+
+        foreach (var overlap in overlaps)
+        {
+            var adjustedPosition = FindNearestNonCollidingDomainPosition(
+                overlap.Domain, overlap.Domain.Position);
+
+            overlap.Domain.Position = adjustedPosition;
+
+            try
+            {
+                if (_jsModule != null)
+                {
+                    await _jsModule.InvokeVoidAsync("updateDomainBoundsAnimated",
+                        overlap.Domain.Id, adjustedPosition.X, adjustedPosition.Y,
+                        overlap.Domain.Size.Width, overlap.Domain.Size.Height, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in ResolveDomainOverlaps: {ex}");
+                await JSRuntime.InvokeVoidAsync("console.error", $"ResolveDomainOverlaps failed: {ex}");
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    // Detect overlapping domains
+    private List<DomainOverlap> DetectDomainOverlaps()
+    {
+        var overlaps = new List<DomainOverlap>();
+
+        for (int i = 0; i < _queryModel.Domains.Count; i++)
+        {
+            for (int j = i + 1; j < _queryModel.Domains.Count; j++)
+            {
+                var domain1 = _queryModel.Domains[i];
+                var domain2 = _queryModel.Domains[j];
+
+                var rect1 = new Rectangle
+                {
+                    X = domain1.Position.X,
+                    Y = domain1.Position.Y,
+                    Width = domain1.Size.Width,
+                    Height = domain1.Size.Height
+                };
+
+                var rect2 = new Rectangle
+                {
+                    X = domain2.Position.X,
+                    Y = domain2.Position.Y,
+                    Width = domain2.Size.Width,
+                    Height = domain2.Size.Height
+                };
+
+                if (DomainsOverlap(rect1, rect2))
+                {
+                    overlaps.Add(new DomainOverlap
+                    {
+                        Domain = domain1,
+                        OverlapsWith = domain2,
+                        OverlapArea = CalculateOverlapArea(rect1, rect2)
+                    });
+                }
+            }
+        }
+
+        return overlaps.OrderByDescending(o => o.OverlapArea).ToList();
+    }
+
+    // Calculate overlap area between two rectangles
+    private int CalculateOverlapArea(Rectangle rect1, Rectangle rect2)
+    {
+        int overlapX = Math.Max(0, Math.Min(rect1.X + rect1.Width, rect2.X + rect2.Width) -
+                                  Math.Max(rect1.X, rect2.X));
+        int overlapY = Math.Max(0, Math.Min(rect1.Y + rect1.Height, rect2.Y + rect2.Height) -
+                                  Math.Max(rect1.Y, rect2.Y));
+        return overlapX * overlapY;
+    }
+
+    // Helper class for domain overlap detection
+    public class DomainOverlap
+    {
+        public DomainModel Domain { get; set; }
+        public DomainModel OverlapsWith { get; set; }
+        public int OverlapArea { get; set; }
+    }
+
+    // JavaScript callable method for updating domain size
+    [JSInvokable]
+    public async Task UpdateDomainSize(string domainId, double width, double height)
+    {
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == domainId);
+        if (domain != null)
+        {
+            domain.Size.Width = (int)width;
+            domain.Size.Height = (int)height;
+            StateHasChanged();
+        }
+    }
+
+    // Method to show domain collision statistics in properties panel
+    private object GetDomainCollisionStats()
+    {
+        var overlaps = DetectDomainOverlaps();
+        var orphanTables = _queryModel.Tables.Count(t => string.IsNullOrEmpty(t.DomainId));
+        var totalDomains = _queryModel.Domains.Count;
+
+        return new
+        {
+            TotalOverlaps = overlaps.Count,
+            OrphanTables = orphanTables,
+            TotalDomains = totalDomains,
+            HasCollisions = overlaps.Any()
+        };
+    }
+
+    // Add these methods to your SqlQueryBuilder.razor component for domain collision detection
+
+    private bool CheckDomainCollision(DomainModel movingDomain, Position newPosition)
+    {
+        var movingRect = new Rectangle
+        {
+            X = newPosition.X,
+            Y = newPosition.Y,
+            Width = movingDomain.Size.Width,
+            Height = movingDomain.Size.Height
+        };
+
+        foreach (var domain in _queryModel.Domains)
+        {
+            if (domain.Id == movingDomain.Id) continue;
+
+            var existingRect = new Rectangle
+            {
+                X = domain.Position.X,
+                Y = domain.Position.Y,
+                Width = domain.Size.Width,
+                Height = domain.Size.Height
+            };
+
+            if (DomainsOverlap(movingRect, existingRect))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool DomainsOverlap(Rectangle rect1, Rectangle rect2)
+    {
+        const int buffer = 30; // Minimum spacing between domains
+
+        return !(rect1.X + rect1.Width + buffer < rect2.X ||
+                 rect2.X + rect2.Width + buffer < rect1.X ||
+                 rect1.Y + rect1.Height + buffer < rect2.Y ||
+                 rect2.Y + rect2.Height + buffer < rect1.Y);
+    }
+
+    private Position FindNearestNonCollidingDomainPosition(DomainModel domain, Position targetPosition)
+    {
+        const int step = 20;
+        const int maxAttempts = 25;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            int radius = attempt * step;
+
+            // Try positions in a spiral pattern around the target
+            for (int angle = 0; angle < 360; angle += 45)
+            {
+                double radians = angle * Math.PI / 180;
+                int testX = targetPosition.X + (int)(Math.Cos(radians) * radius);
+                int testY = targetPosition.Y + (int)(Math.Sin(radians) * radius);
+
+                var testPosition = new Position { X = testX, Y = testY };
+
+                if (!CheckDomainCollision(domain, testPosition))
+                {
+                    return testPosition;
+                }
+            }
+        }
+
+        // If no position found, return original with offset
+        return new Position
+        {
+            X = targetPosition.X + 50,
+            Y = targetPosition.Y + 50
+        };
+    }
+
+    // Enhanced domain creation with collision detection
+    private async Task CreateDomainWithCollisionDetection(string name, Position position, Size size, string color)
+    {
+        var domain = new DomainModel
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = name,
+            Position = position,
+            Size = size,
+            Color = color,
+            IsCollapsed = false
+        };
+
+        // Check for collision and adjust position if needed
+        if (CheckDomainCollision(domain, position))
+        {
+            var adjustedPosition = FindNearestNonCollidingDomainPosition(domain, position);
+            domain.Position = adjustedPosition;
+
+            try
+            {
+                // Show feedback about position adjustment
+                if (_jsModule != null)
+                {
+                    await _jsModule.InvokeVoidAsync("showDomainFeedback",
+                        $"Domain '{name}' positioned to avoid overlap", "success");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in CreateDomainWithCollisionDetection: {ex}");
+                await JSRuntime.InvokeVoidAsync("console.error", $"CreateDomainWithCollisionDetection failed: {ex}");
+            }
+
+        }
+
+        _queryModel.Domains.Add(domain);
+        StateHasChanged();
+    }
+
+    // Updated CreateDomain method to use collision detection
+    private void CreateDomain(string name, Position position, Size size, string color)
+    {
+        CreateDomainWithCollisionDetection(name, position, size, color);
+    }
+
+    // Auto-arrange domains to prevent overlaps
+    private async Task AutoArrangeDomains()
+    {
+        if (!_queryModel.Domains.Any()) return;
+
+        const int padding = 50;
+        const int domainsPerRow = 2;
+
+        int currentX = 50;
+        int currentY = 50;
+        int maxHeightInRow = 0;
+        int domainIndex = 0;
+
+        foreach (var domain in _queryModel.Domains.OrderBy(d => d.Name))
+        {
+            domain.Position.X = currentX;
+            domain.Position.Y = currentY;
+
+            currentX += domain.Size.Width + padding;
+            maxHeightInRow = Math.Max(maxHeightInRow, domain.Size.Height);
+
+            domainIndex++;
+            if (domainIndex % domainsPerRow == 0)
+            {
+                currentX = 50;
+                currentY += maxHeightInRow + padding;
+                maxHeightInRow = 0;
+            }
+        }
+
+        StateHasChanged();
+
+        try
+        {
+            if (_jsModule != null)
+            {
+                await _jsModule.InvokeVoidAsync("showDomainFeedback", "Domains rearranged to prevent overlaps", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in AutoArrangeDomains: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"AutoArrangeDomains failed: {ex}");
+        }
+
+    }
+
+    // JavaScript callable method for domain position updates with collision detection
+    [JSInvokable]
+    public async Task<object> UpdateDomainPosition(string domainId, double x, double y)
+    {
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == domainId);
+        if (domain == null)
+        {
+            return new { success = false, message = "Domain not found" };
+        }
+
+        var newPosition = new Position { X = (int)x, Y = (int)y };
+
+        // Check for collision
+        if (CheckDomainCollision(domain, newPosition))
+        {
+            var adjustedPosition = FindNearestNonCollidingDomainPosition(domain, newPosition);
+            domain.Position = adjustedPosition;
+
+            try
+            {
+                // Update domain bounds in JavaScript
+                if (_jsModule != null)
+                {
+                    await _jsModule.InvokeVoidAsync("updateDomainBoundsAnimated",
+                        domainId, adjustedPosition.X, adjustedPosition.Y,
+                        domain.Size.Width, domain.Size.Height, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in UpdateDomainPosition: {ex}");
+                await JSRuntime.InvokeVoidAsync("console.error", $"UpdateDomainPosition failed: {ex}");
+            }
+
+
+            StateHasChanged();
+
+            return new
+            {
+                success = true,
+                adjusted = true,
+                x = adjustedPosition.X,
+                y = adjustedPosition.Y,
+                message = "Position adjusted to prevent overlap"
+            };
+        }
+        else
+        {
+            domain.Position = newPosition;
+            StateHasChanged();
+
+            return new
+            {
+                success = true,
+                adjusted = false,
+                x = newPosition.X,
+                y = newPosition.Y,
+                message = "Position updated"
+            };
+        }
+    }
+
+    // Enhanced domain auto-sizing with collision awareness
+    private async Task AdjustDomainSizeWithCollisionDetection(string domainId)
+    {
+        var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == domainId);
+        if (domain == null) return;
+
+        var tablesInDomain = _queryModel.Tables.Where(t => t.DomainId == domainId).ToList();
+
+        if (!tablesInDomain.Any())
+        {
+            domain.Size.Width = 300;
+            domain.Size.Height = 200;
+            return;
+        }
+
+        const int padding = 20;
+        const int headerHeight = 40;
+
+        // Calculate required bounds
+        var minX = tablesInDomain.Min(t => t.Position.X);
+        var minY = tablesInDomain.Min(t => t.Position.Y);
+        var maxX = tablesInDomain.Max(t => t.Position.X + t.Size.Width);
+        var maxY = tablesInDomain.Max(t => t.Position.Y + t.Size.Height);
+
+        var originalPosition = new Position { X = domain.Position.X, Y = domain.Position.Y };
+        var originalSize = new Size { Width = domain.Size.Width, Height = domain.Size.Height };
+
+        // Calculate new bounds
+        var newDomainX = Math.Min(domain.Position.X, minX - padding);
+        var newDomainY = Math.Min(domain.Position.Y, minY - headerHeight - padding);
+        var requiredWidth = maxX - newDomainX + padding;
+        var requiredHeight = maxY - newDomainY + padding;
+
+        // Create temporary domain for collision testing
+        var testDomain = new DomainModel
+        {
+            Id = domain.Id,
+            Position = new Position { X = newDomainX, Y = newDomainY },
+            Size = new Size
+            {
+                Width = Math.Max(300, requiredWidth),
+                Height = Math.Max(200, requiredHeight)
+            }
+        };
+
+        // Check if new size would cause collision
+        if (CheckDomainCollision(testDomain, testDomain.Position))
+        {
+            // Try to find alternative positioning
+            var adjustedPosition = FindNearestNonCollidingDomainPosition(testDomain, testDomain.Position);
+
+            // If adjusted position is too far from tables, keep original bounds
+            var distanceFromTables = Math.Sqrt(
+                Math.Pow(adjustedPosition.X - minX, 2) +
+                Math.Pow(adjustedPosition.Y - minY, 2));
+
+            if (distanceFromTables > 100) // Too far, keep original
+            {
+                return;
+            }
+
+            domain.Position = adjustedPosition;
+        }
+        else
+        {
+            domain.Position.X = newDomainX;
+            domain.Position.Y = newDomainY;
+        }
+
+        domain.Size.Width = Math.Max(300, requiredWidth);
+        domain.Size.Height = Math.Max(200, requiredHeight);
+
+        // Update UI if bounds changed
+        if (domain.Position.X != originalPosition.X ||
+            domain.Position.Y != originalPosition.Y ||
+            domain.Size.Width != originalSize.Width ||
+            domain.Size.Height != originalSize.Height)
+        {
+            try
+            {
+                if (_jsModule != null)
+                {
+                    await _jsModule.InvokeVoidAsync("updateDomainBoundsAnimated",
+                        domainId, domain.Position.X, domain.Position.Y
+                        domain.Size.Width, domain.Size.Height, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in AdjustDomainSizeWithCollisionDetection - updateDomainBoundsAnimated: {ex}");
+                await JSRuntime.InvokeVoidAsync("console.error", $"AdjustDomainSizeWithCollisionDetection - updateDomainBoundsAnimated failed: {ex}");
+            }
+
+        }
+
+        StateHasChanged();
+    }
+
+    private List<TableModel> GetVisibleTables()
+    {
+        return _queryModel.Tables.Where(table =>
+        {
+            if (string.IsNullOrEmpty(table.DomainId))
+                return true; // Orphan tables are always visible
+
+            var domain = _queryModel.Domains.FirstOrDefault(d => d.Id == table.DomainId);
+            return domain == null || !domain.IsCollapsed;
+        }).ToList();
+    }
+
+    private void GenerateQueryWithVisibilityFilter()
+    {
+        var visibleTables = GetVisibleTables();
+
+        var relevantTables = visibleTables.Where(t =>
+            t.Columns.Any(c => c.IsSelected) ||
+            _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
+        ).ToList();
+
+        if (!relevantTables.Any())
+        {
+            _generatedSql = "-- No visible tables selected or connected. Expand domains or select columns.";
+            StateHasChanged();
+            return;
+        }
+
+        // Create query model with only visible tables
+        var queryModelForGeneration = new QueryModel
+        {
+            Tables = relevantTables,
+            Relationships = _queryModel.Relationships.Where(r =>
+                relevantTables.Any(t => t.Id == r.SourceTableId) &&
+                relevantTables.Any(t => t.Id == r.TargetTableId)
+            ).ToList()
+        };
+
+        UpdateSqlPreview(queryModelForGeneration);
     }
 
 
