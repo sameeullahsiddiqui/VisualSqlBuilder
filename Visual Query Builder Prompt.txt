@@ -1,0 +1,41 @@
+I'm working on a Blazor WebAssembly Excel Schema Diagram component that visualizes Excel sheets and allows users to create relationships between columns. The component generates OLE DB queries and executes them on the server to return flat data results. it should also be able to save query and load diagram relationship based on query when loaded. , when we execute query it will return flat denormalized data. 
+Current Implementation Status:
+
+✅ Fixed Blazor component with proper drag-and-drop for table positioning
+✅ 1:1 relationship creation between columns (simplified, no relationship type selector), one table column can be linked to many other table column.
+✅ Load/Save mapping functionality with proper JSON serialization
+✅ Server-side API controller for Excel query execution for getting data from excel in flat strucuture.
+✅ Query results display in tabular format
+✅ Query can be saved and reloaded on server.
+
+Key Components:
+
+Blazor Component: Handles UI, file loading, visual diagram, and client-side logic
+Excel Controller: Server-side API that executes queries against Excel files
+Models: SheetModel, ColumnModel, ConnectionModel, QueryRequest/Response classes
+
+Current Features:
+
+Load Excel files and extract sheet headers
+Visual drag-and-drop interface for arranging sheets
+Click-to-connect columns between different sheets (1:1 only)
+Generate and execute SQL queries on server
+Display flat data results in table format
+Save/load mapping configurations
+
+Technical Stack:
+
+Blazor WebAssembly
+System.Data.OleDb for Excel connectivity
+JSON serialization for data transfer
+HTML5/CSS for visual components
+
+Next Steps I'd Like Help With:
+[Add your specific questions or areas you want to continue working on]
+Files Structure:
+
+Main Blazor component with embedded CSS and JavaScript
+Server-side ExcelController with query execution logic
+Shared models for data transfer
+
+Please help me continue developing this Excel schema visualization tool.

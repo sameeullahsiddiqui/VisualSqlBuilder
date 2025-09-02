@@ -1,7 +1,7 @@
-using 
-    Microsoft.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 using System.Data;
 using VisualSqlBuilder.Core.Models;
+using ClosedXML.Excel;
 
 namespace VisualSqlBuilder.Core.Services;
 
@@ -11,6 +11,8 @@ public interface ISchemaService
     Task<List<RelationshipModel>> LoadRelationshipsFromSqlServerAsync(string connectionString, List<TableModel> tables);
     Task<List<TableModel>> LoadTablesFromExcelAsync(Stream excelStream);
     Task<DataTable> ExecuteQueryAsync(string connectionString, string sql, int maxRows = 100);
+    Task<List<object[]>> LoadExcelPreviewDataAsync(Stream excelStream, string sheetName, int maxRows = 50);
+    Task<ExcelWorkbookInfo> GetExcelWorkbookInfoAsync(Stream excelStream);
 }
 
 public class SchemaService : ISchemaService
@@ -152,67 +154,313 @@ public class SchemaService : ISchemaService
     {
         var tables = new List<TableModel>();
 
-        using var workbook = new ClosedXML.Excel.XLWorkbook(excelStream);
-
-        foreach (var worksheet in workbook.Worksheets)
+        try
         {
-            var table = new TableModel
-            {
-                Name = worksheet.Name,
-                Alias = worksheet.Name,
-                IsFromExcel = true,
-                Schema = "excel"
-            };
+            using var workbook = new XLWorkbook(excelStream);
 
-            var firstRow = worksheet.FirstRowUsed();
-            if (firstRow != null)
+            foreach (var worksheet in workbook.Worksheets)
             {
-                foreach (var cell in firstRow.Cells())
+                // Skip empty worksheets
+                if (worksheet.LastRowUsed() == null || worksheet.LastColumnUsed() == null)
+                    continue;
+
+                var table = new TableModel
                 {
-                    var columnName = cell.Value.ToString();
-                    if (!string.IsNullOrWhiteSpace(columnName))
+                    Name = SanitizeSheetName(worksheet.Name),
+                    Alias = GenerateAlias(worksheet.Name),
+                    IsFromExcel = true,
+                    Schema = "excel",
+                    Description = $"Excel sheet: {worksheet.Name}"
+                };
+
+                var firstRow = worksheet.FirstRowUsed();
+                if (firstRow == null) continue;
+
+                var lastColumn = worksheet.LastColumnUsed();
+                var lastRow = worksheet.LastRowUsed();
+
+                // Set row count
+                table.RowCount = lastRow.RowNumber() - 1; // Subtract header row
+
+                // Detect if first row contains headers
+                bool hasHeaders = DetectHeaders(worksheet);
+                int dataStartRow = hasHeaders ? 2 : 1;
+                int headerRow = hasHeaders ? 1 : 0;
+
+                // Process columns
+                for (int colNum = 1; colNum <= lastColumn.ColumnNumber(); colNum++)
+                {
+                    string columnName;
+
+                    if (hasHeaders)
                     {
-                        var dataType = DetectColumnType(worksheet, cell.Address.ColumnNumber);
-                        table.Columns.Add(new ColumnModel
-                        {
-                            Name = columnName,
-                            DataType = dataType,
-                            IsNullable = true
-                        });
+                        var headerCell = worksheet.Cell(1, colNum);
+                        columnName = headerCell.Value.ToString().Trim();
+                        if (string.IsNullOrWhiteSpace(columnName))
+                            columnName = $"Column{colNum}";
                     }
+                    else
+                    {
+                        columnName = $"Column{colNum}";
+                    }
+
+                    // Sanitize column name
+                    columnName = SanitizeColumnName(columnName);
+
+                    // Detect data type by sampling data
+                    var dataType = DetectColumnType(worksheet, colNum, dataStartRow, lastRow.RowNumber());
+
+                    // Detect if column could be a primary key (unique, non-null values)
+                    var isPrimaryKey = DetectPrimaryKey(worksheet, colNum, dataStartRow, lastRow.RowNumber());
+
+                    var column = new ColumnModel
+                    {
+                        Name = columnName,
+                        DataType = dataType.Type,
+                        MaxLength = dataType.MaxLength,
+                        IsNullable = dataType.IsNullable,
+                        IsPrimaryKey = isPrimaryKey,
+                        IsForeignKey = false // We'll detect this later with AI
+                    };
+
+                    table.Columns.Add(column);
+                }
+
+                // Only add tables that have columns
+                if (table.Columns.Any())
+                {
+                    tables.Add(table);
                 }
             }
 
-            tables.Add(table);
+            return tables;
         }
-
-        return await Task.FromResult(tables);
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error processing Excel file: {ex.Message}", ex);
+        }
     }
 
-    private string DetectColumnType(ClosedXML.Excel.IXLWorksheet worksheet, int columnNumber)
+    public async Task<ExcelWorkbookInfo> GetExcelWorkbookInfoAsync(Stream excelStream)
     {
-        var sampleSize = Math.Min(100, worksheet.LastRowUsed()?.RowNumber() ?? 0);
+        try
+        {
+            using var workbook = new XLWorkbook(excelStream);
+
+            var workbookInfo = new ExcelWorkbookInfo
+            {
+                FileName = "Excel Workbook",
+                LastModified = DateTime.Now,
+                FileSize = excelStream.Length
+            };
+
+            foreach (var worksheet in workbook.Worksheets)
+            {
+                var lastRow = worksheet.LastRowUsed();
+                var lastColumn = worksheet.LastColumnUsed();
+
+                if (lastRow == null || lastColumn == null) continue;
+
+                var hasHeaders = DetectHeaders(worksheet);
+                var columnNames = new List<string>();
+                var dataTypes = new List<string>();
+
+                // Get column names and types
+                for (int colNum = 1; colNum <= lastColumn.ColumnNumber(); colNum++)
+                {
+                    if (hasHeaders)
+                    {
+                        var headerCell = worksheet.Cell(1, colNum);
+                        var columnName = headerCell.Value.ToString().Trim();
+                        columnNames.Add(string.IsNullOrWhiteSpace(columnName) ? $"Column{colNum}" : columnName);
+                    }
+                    else
+                    {
+                        columnNames.Add($"Column{colNum}");
+                    }
+
+                    var dataType = DetectColumnType(worksheet, colNum, hasHeaders ? 2 : 1, lastRow.RowNumber());
+                    dataTypes.Add(dataType.Type);
+                }
+
+                var sheetInfo = new ExcelSheetInfo
+                {
+                    Name = worksheet.Name,
+                    ColumnCount = lastColumn.ColumnNumber(),
+                    RowCount = lastRow.RowNumber() - (hasHeaders ? 1 : 0),
+                    HasHeader = hasHeaders,
+                    ColumnNames = columnNames,
+                    DataTypes = dataTypes
+                };
+
+                workbookInfo.Sheets.Add(sheetInfo);
+            }
+
+            return workbookInfo;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error analyzing Excel workbook: {ex.Message}", ex);
+        }
+    }
+
+    public async Task<List<object[]>> LoadExcelPreviewDataAsync(Stream excelStream, string sheetName, int maxRows = 50)
+    {
+        var previewData = new List<object[]>();
+
+        try
+        {
+            using var workbook = new XLWorkbook(excelStream);
+            var worksheet = workbook.Worksheets.FirstOrDefault(w => w.Name == sheetName);
+
+            if (worksheet == null)
+                return previewData;
+
+            var lastRow = worksheet.LastRowUsed();
+            var lastColumn = worksheet.LastColumnUsed();
+
+            if (lastRow == null || lastColumn == null)
+                return previewData;
+
+            bool hasHeaders = DetectHeaders(worksheet);
+            int startRow = hasHeaders ? 2 : 1;
+            int endRow = Math.Min(lastRow.RowNumber(), startRow + maxRows - 1);
+
+            for (int rowNum = startRow; rowNum <= endRow; rowNum++)
+            {
+                var rowData = new object[lastColumn.ColumnNumber()];
+
+                for (int colNum = 1; colNum <= lastColumn.ColumnNumber(); colNum++)
+                {
+                    var cell = worksheet.Cell(rowNum, colNum);
+                    rowData[colNum - 1] = GetCellValue(cell);
+                }
+
+                previewData.Add(rowData);
+            }
+
+            return previewData;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error loading preview data: {ex.Message}", ex);
+        }
+    }
+
+    private bool DetectHeaders(IXLWorksheet worksheet)
+    {
+        var firstRow = worksheet.FirstRowUsed();
+        var secondRow = firstRow?.RowBelow();
+
+        if (firstRow == null || secondRow == null) return false;
+
+        var lastColumn = worksheet.LastColumnUsed();
+        if (lastColumn == null) return false;
+
+        int textInFirst = 0;
+        int textInSecond = 0;
+        int totalColumns = lastColumn.ColumnNumber();
+
+        // Compare data types in first two rows
+        for (int colNum = 1; colNum <= totalColumns; colNum++)
+        {
+            var firstCell = firstRow.Cell(colNum);
+            var secondCell = secondRow.Cell(colNum);
+
+            if (firstCell.DataType == XLDataType.Text && !string.IsNullOrWhiteSpace(firstCell.Value.ToString()))
+                textInFirst++;
+
+            if (secondCell.DataType == XLDataType.Text && !string.IsNullOrWhiteSpace(secondCell.Value.ToString()))
+                textInSecond++;
+        }
+
+        // If first row has significantly more text than second, likely headers
+        return textInFirst > (totalColumns * 0.7) && textInFirst > textInSecond;
+    }
+
+    private (string Type, int? MaxLength, bool IsNullable) DetectColumnType(IXLWorksheet worksheet, int columnNumber, int startRow, int endRow)
+    {
+        var sampleSize = Math.Min(100, endRow - startRow + 1);
         var hasDate = false;
         var hasNumber = false;
+        var hasBoolean = false;
         var hasText = false;
+        var hasNull = false;
+        var maxLength = 0;
+        var sampleCount = 0;
 
-        for (int row = 2; row <= sampleSize; row++)
+        for (int row = startRow; row <= Math.Min(startRow + sampleSize - 1, endRow); row++)
         {
             var cell = worksheet.Cell(row, columnNumber);
-            if (!cell.IsEmpty())
+            sampleCount++;
+
+            if (cell.IsEmpty() || string.IsNullOrWhiteSpace(cell.Value.ToString()))
             {
-                if (cell.DataType == ClosedXML.Excel.XLDataType.DateTime)
+                hasNull = true;
+                continue;
+            }
+
+            var value = cell.Value.ToString();
+            maxLength = Math.Max(maxLength, value.Length);
+
+            switch (cell.DataType)
+            {
+                case XLDataType.DateTime:
                     hasDate = true;
-                else if (cell.DataType == ClosedXML.Excel.XLDataType.Number)
+                    break;
+                case XLDataType.Number:
                     hasNumber = true;
-                else
+                    break;
+                case XLDataType.Boolean:
+                    hasBoolean = true;
+                    break;
+                case XLDataType.Text:
                     hasText = true;
+                    // Check if text looks like a boolean
+                    if (IsBooleanText(value))
+                        hasBoolean = true;
+                    // Check if text looks like a number
+                    else if (IsNumericText(value))
+                        hasNumber = true;
+                    break;
             }
         }
 
-        if (hasDate && !hasText) return "datetime";
-        if (hasNumber && !hasText && !hasDate) return "decimal";
-        return "nvarchar";
+        // Determine the most appropriate SQL data type
+        if (hasDate && !hasText && !hasNumber)
+            return ("datetime2", null, hasNull);
+
+        if (hasBoolean && !hasText && !hasNumber && !hasDate)
+            return ("bit", null, hasNull);
+
+        if (hasNumber && !hasText && !hasDate)
+        {
+            // Determine if it's integer or decimal
+            bool hasDecimals = false;
+            for (int row = startRow; row <= Math.Min(startRow + sampleSize - 1, endRow); row++)
+            {
+                var cell = worksheet.Cell(row, columnNumber);
+                if (!cell.IsEmpty() && cell.DataType == XLDataType.Number)
+                {
+                    if (cell.Value.ToString().Contains("."))
+                    {
+                        hasDecimals = true;
+                        break;
+                    }
+                }
+            }
+            return (hasDecimals ? "decimal(18,2)" : "int", null, hasNull);
+        }
+
+        // Default to text with appropriate length
+        if (maxLength <= 50)
+            return ("nvarchar(50)", 50, hasNull);
+        else if (maxLength <= 255)
+            return ("nvarchar(255)", 255, hasNull);
+        else if (maxLength <= 4000)
+            return ("nvarchar(4000)", 4000, hasNull);
+        else
+            return ("nvarchar(max)", null, hasNull);
     }
 
     public async Task<DataTable> ExecuteQueryAsync(string connectionString, string sql, int maxRows = 100)
@@ -235,4 +483,141 @@ public class SchemaService : ISchemaService
 
         return dataTable;
     }
+
+    private string SanitizeSheetName(string sheetName)
+    {
+        if (string.IsNullOrWhiteSpace(sheetName))
+            return "Sheet1";
+
+        // Remove invalid characters for SQL table names
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(sheetName, @"[^\w\s]", "");
+        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"\s+", "_");
+
+        // Ensure it starts with a letter
+        if (!char.IsLetter(sanitized[0]))
+            sanitized = "T_" + sanitized;
+
+        return sanitized.Length > 50 ? sanitized.Substring(0, 50) : sanitized;
+    }
+
+    private string SanitizeColumnName(string columnName)
+    {
+        if (string.IsNullOrWhiteSpace(columnName))
+            return "Column1";
+
+        // Remove invalid characters for SQL column names
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(columnName, @"[^\w\s]", "");
+        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"\s+", "_");
+
+        // Ensure it starts with a letter
+        if (!char.IsLetter(sanitized[0]))
+            sanitized = "C_" + sanitized;
+
+        return sanitized.Length > 50 ? sanitized.Substring(0, 50) : sanitized;
+    }
+
+    private bool IsBooleanText(string value)
+    {
+        var lower = value.ToLower().Trim();
+        return lower == "true" || lower == "false" || lower == "yes" || lower == "no" ||
+               lower == "1" || lower == "0" || lower == "y" || lower == "n";
+    }
+
+    private bool IsNumericText(string value)
+    {
+        return decimal.TryParse(value, out _);
+    }
+
+    private object GetCellValue(IXLCell cell)
+    {
+        if (cell.IsEmpty()) return null;
+
+        return cell.DataType switch
+        {
+            XLDataType.Text => cell.Value.ToString(),
+            XLDataType.Number => cell.Value.GetNumber(),
+            XLDataType.Boolean => cell.Value.GetBoolean(),
+            XLDataType.DateTime => cell.Value.GetDateTime(),
+            _ => cell.Value.ToString()
+        };
+    }
+
+    private string GenerateAlias(string tableName)
+    {
+        var words = tableName.Split(new[] { '_', ' ', '-' }, StringSplitOptions.RemoveEmptyEntries);
+
+        if (words.Length > 1)
+        {
+            // Take first letter of each word
+            return string.Join("", words.Take(3).Select(w => w[0])).ToLower();
+        }
+
+        // For single words, take first few characters
+        return tableName.Length >= 3 ? tableName.Substring(0, 3).ToLower() : tableName.ToLower();
+    }
+
+    private bool DetectPrimaryKey(IXLWorksheet worksheet, int columnNumber, int startRow, int endRow)
+    {
+        var values = new HashSet<string>();
+        var sampleSize = Math.Min(50, endRow - startRow + 1);
+
+        for (int row = startRow; row <= Math.Min(startRow + sampleSize - 1, endRow); row++)
+        {
+            var cell = worksheet.Cell(row, columnNumber);
+
+            if (cell.IsEmpty() || string.IsNullOrWhiteSpace(cell.Value.ToString()))
+                return false; // Nulls can't be primary key
+
+            var value = cell.Value.ToString();
+
+            if (values.Contains(value))
+                return false; // Duplicates can't be primary key
+
+            values.Add(value);
+        }
+
+        // If all values are unique and non-null, could be primary key
+        // Additional heuristics: column name contains "id", "key", etc.
+        var columnName = worksheet.Cell(1, columnNumber).Value.ToString().ToLower();
+        return values.Count > 0 && (columnName.Contains("id") || columnName.Contains("key") || columnName == "pk");
+    }
 }
+
+// Extension methods and helper classes
+public static class TableModelExtensions
+{
+    public static void SetDefaultPositions(this List<TableModel> tables)
+    {
+        int x = 50, y = 50;
+        int maxHeight = 0;
+        const int tableWidth = 280;
+        const int tableSpacing = 320;
+        const int rowSpacing = 180;
+        const int tablesPerRow = 4;
+
+        for (int i = 0; i < tables.Count; i++)
+        {
+            var table = tables[i];
+
+            // Set default size if not set
+            if (table.Size.Width == 0)
+            {
+                table.Size.Width = tableWidth;
+                table.Size.Height = Math.Max(150, 40 + (table.Columns.Count * 30));
+            }
+
+            table.Position = new Position { X = x, Y = y };
+
+            x += tableSpacing;
+            maxHeight = Math.Max(maxHeight, table.Size.Height);
+
+            if ((i + 1) % tablesPerRow == 0)
+            {
+                x = 50;
+                y += maxHeight + rowSpacing;
+                maxHeight = 0;
+            }
+        }
+    }
+}
+

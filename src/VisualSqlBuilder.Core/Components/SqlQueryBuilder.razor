@@ -13,11 +13,11 @@
             <button class="btn btn-primary" type="button" @onclick="ShowConnectionDialog">
                 <i class="bi bi-database"></i> Connect Database
             </button>
-            <InputFile id="excelFileInput" style="display:none" OnChange="HandleExcelSelected" />
 
             <button class="btn btn-success" type="button" @onclick="ShowExcelUpload">
                 <i class="bi bi-file-earmark-excel"></i> Upload Excel
             </button>
+
             <button class="btn btn-info" type="button" @onclick="AddNewTable">
                 <i class="bi bi-table"></i> Add Table
             </button>
@@ -155,8 +155,8 @@
                      @onclick="() => SelectDomain(domain)"
                      @onclick:stopPropagation="true"
                      style="left: @(domain.Position.X)px; top: @(domain.Position.Y)px;
-                                                                                     width: @(domain.Size.Width)px; height: @(domain.Size.Height)px;
-                                                                                     background-color: @domain.Color;">
+                                                                                                 width: @(domain.Size.Width)px; height: @(domain.Size.Height)px;
+                                                                                                 background-color: @domain.Color;">
                     <div class="domain-header">
                         <span class="domain-name">@domain.Name</span>
                         <div class="domain-controls">
@@ -204,10 +204,10 @@
                      data-table-id="@table.Id"
                      data-domain-id="@table.DomainId"
                      style="left: @(table.Position.X)px;
-                                                                                    top: @(table.Position.Y)px;
-                                                                                    width: @(table.Size.Width)px;
-                                                                                    height: @(table.Size.Height)px;
-                                                                                    @(displayStyle)"
+                                                                                                top: @(table.Position.Y)px;
+                                                                                                width: @(table.Size.Width)px;
+                                                                                                height: @(table.Size.Height)px;
+                                                                                                @(displayStyle)"
                      @onclick="() => SelectTable(table)">
 
 
@@ -967,24 +967,180 @@
     </div>
 }
 
-<!-- Excel Upload Modal -->
+
 @if (_showExcelModal)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Upload Excel File</h5>
+                    <h5 class="modal-title">
+                        <i class="bi bi-file-earmark-excel"></i>
+                        Import Excel Workbook
+                    </h5>
                     <button type="button" class="btn-close" @onclick="CloseExcelDialog"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- ExcelUpload component would go here -->
+                    <div class="mb-3">
+                        <label class="form-label">Select Excel File:</label>
+                        <InputFile OnChange="@HandleExcelFileSelected"
+                                   accept=".xlsx,.xls"
+                                   class="form-control"
+                                   multiple="false" />
+                        <div class="form-text">
+                            <i class="bi bi-info-circle"></i>
+                            Supported formats: .xlsx, .xls (Max size: 10MB)
+                        </div>
+                    </div>
+
+                    @if (_excelProcessing)
+                    {
+                        <div class="alert alert-info">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                            Processing Excel file... Found @_processedSheets sheets
+                        </div>
+
+                        @if (_processingProgress > 0)
+                        {
+                            <div class="progress mb-3" style="height: 8px;">
+                                <div class="progress-bar bg-success"
+                                     role="progressbar"
+                                     style="width: @(_processingProgress)%">
+                                </div>
+                            </div>
+                        }
+                    }
+
+                    @if (_excelTables.Any())
+                    {
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6>
+                                    <i class="bi bi-table"></i>
+                                    Detected Sheets (@_excelTables.Count):
+                                </h6>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button type="button" class="btn btn-outline-primary" @onclick="SelectAllExcelTables">
+                                        <i class="bi bi-check-all"></i> Select All
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="SelectNoExcelTables">
+                                        <i class="bi bi-x-square"></i> Select None
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th style="width: 50px;">Select</th>
+                                            <th>Sheet Name</th>
+                                            <th>Columns</th>
+                                            <th>Rows</th>
+                                            <th>Data Types</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @for (int i = 0; i < _excelTables.Count; i++)
+                                        {
+                                            var table = _excelTables[i];
+                                            var tableIndex = i;
+
+                                            <tr class="@(GetExcelTableSelected(tableIndex) ? "table-success" : "")">
+                                                <td>
+                                                    <input type="checkbox"
+                                                           class="form-check-input"
+                                                           checked="@GetExcelTableSelected(tableIndex)"
+                                                           @onchange="@((e) => SetExcelTableSelected(tableIndex, (bool)e.Value))" />
+                                                </td>
+                                                <td>
+                                                    <div class="d-flex align-items-center">
+                                                        <i class="bi bi-file-earmark-spreadsheet text-success me-2"></i>
+                                                        <div>
+                                                            <strong>@table.Name</strong>
+                                                            @if (!string.IsNullOrEmpty(table.Description))
+                                                            {
+                                                                <br>
+                                                
+                                                                <small class="text-muted">@table.Description</small>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-primary">@table.Columns.Count</span>
+                                                    @if (table.Columns.Any(c => c.IsPrimaryKey))
+                                                    {
+                                                        <i class="bi bi-key-fill text-warning" title="Has Primary Key"></i>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-info">@(table.RowCount ?? 0)</span>
+                                                </td>
+                                                <td>
+                                                    <div class="data-types-preview">
+                                                        @{
+                                                            var dataTypes = table.Columns.GroupBy(c => c.DataType).Select(g => new { Type = g.Key, Count = g.Count() }).Take(3).ToList();
+                                                        }
+                                                        @foreach (var dt in dataTypes)
+                                                        {
+                                                            <span class="badge bg-light text-dark me-1" style="font-size: 10px;">
+                                                                @dt.Type (@dt.Count)
+                                                            </span>
+                                                        }
+                                                        @if (table.Columns.GroupBy(c => c.DataType).Count() > 3)
+                                                        {
+                                                            <span class="badge bg-secondary" style="font-size: 10px;">+@(table.Columns.GroupBy(c => c.DataType).Count() - 3)</span>
+                                                        }
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            @if (OpenAIService != null && _excelTables.Count > 1)
+                            {
+                                <div class="mt-3">
+                                    <div class="card">
+                                        <div class="card-body">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" @bind="_useExcelAI" id="useExcelAI">
+                                                <label class="form-check-label" for="useExcelAI">
+                                                    <i class="bi bi-robot"></i>
+                                                    <strong>Use AI to suggest relationships between sheets</strong>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_excelErrorMessage))
+                    {
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            @_excelErrorMessage
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseExcelDialog">Cancel</button>
+                    <button type="button"
+                            class="btn btn-primary"
+                            @onclick="ImportExcelTables"
+                            disabled="@(!HasSelectedExcelTables() || _excelProcessing)">
+                        <i class="bi bi-upload"></i>
+                        Import @(GetSelectedExcelTableCount()) Selected Sheet@((GetSelectedExcelTableCount() != 1) ? "s" : "")
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 }
-
 
 <!-- Create Domain Modal -->
 @if (showCreateDomainModal)
@@ -1075,69 +1231,101 @@
 
 
 @code {
+    // =============================
+    // Excel Import State
+    // =============================
+    private List<TableModel> _excelTables = new();
+    private List<bool> _excelTableSelections = new();
+    private bool _excelProcessing = false;
+    private bool _useExcelAI = true;
+    private string _excelErrorMessage = string.Empty;
+    private int _processedSheets = 0;
+    private int _processingProgress = 0;
+    private const long MaxExcelFileSize = 10 * 1024 * 1024; // 10MB
+
+    // =============================
+    // Query / SQL State
+    // =============================
     private QueryModel _queryModel = new();
-    private string _generatedSql = "";
+    private string _generatedSql = string.Empty;
     private TableModel? _selectedTable;
     private List<ValidationRule> _validationRules = new();
     private System.Data.DataTable? _queryResults;
-    private ElementReference canvasElement;
-
     private double _zoomLevel = 1.0;
 
-    [Parameter]
-    public string? ConnectionString { get; set; }
+    // =============================
+    // Blazor Parameters
+    // =============================
+    [Parameter] public string? ConnectionString { get; set; }
+    [Parameter] public EventCallback<string> OnQueryGenerated { get; set; }
 
-    [Parameter]
-    public EventCallback<string> OnQueryGenerated { get; set; }
-
-    // Modal states
+    // =============================
+    // General UI State
+    // =============================
+    private ElementReference canvasElement;
     private bool _showConnectionModal = false;
     private bool _showExcelModal = false;
     private bool _isConnecting = false;
-    private string _connectionError = "";
+    private string _connectionError = string.Empty;
 
-    // JavaScript module
+    // =============================
+    // JS Interop
+    // =============================
     private IJSObjectReference? _jsModule;
     private DotNetObjectReference<SqlQueryBuilder>? dotNetHelper;
 
-    // Rename modal state
+    // =============================
+    // Rename Modal
+    // =============================
     private bool showRenameModal = false;
-    private string currentTableIdForRename = "";
-    private string newTableName = "";
+    private string currentTableIdForRename = string.Empty;
+    private string newTableName = string.Empty;
 
-    // Join type modal state
+    // =============================
+    // Join Type Modal
+    // =============================
     private bool showJoinTypeModal = false;
     private PendingRelationship? pendingRelationship;
     private JoinType selectedJoinType = JoinType.InnerJoin;
     private string selectedCardinality = "1:N";
-    private string relationshipName = "";
+    private string relationshipName = string.Empty;
     private string? editingRelationshipId = null;
 
-    // Add Column modal state
+    // =============================
+    // Add Column Modal
+    // =============================
     private bool showAddColumnModal = false;
     private TableModel? selectedTableForColumn;
-    private string newColumnName = "";
+    private string newColumnName = string.Empty;
     private string newColumnDataType = "nvarchar";
     private int? newColumnMaxLength;
     private bool newColumnIsNullable = true;
     private bool newColumnIsPrimaryKey = false;
     private bool newColumnIsForeignKey = false;
-    private string newColumnExpression = "";
+    private string newColumnExpression = string.Empty;
 
-    // Column Alias modal state
+    // =============================
+    // Column Alias Modal
+    // =============================
     private bool showColumnAliasModal = false;
     private ColumnModel? selectedColumnForAlias;
-    private string newColumnAlias = "";
+    private string newColumnAlias = string.Empty;
 
-    // Domain Modal state
+    // =============================
+    // Domain Modal
+    // =============================
     private bool showCreateDomainModal = false;
-    private string newDomainName = "";
+    private string newDomainName = string.Empty;
     private string newDomainColor = "#e3f2fd";
 
-    // Auto-arrange state
+    // =============================
+    // Auto Arrange
+    // =============================
     private bool isAutoArranging = false;
 
+    // =============================
     // Pending relationship model
+    // =============================
     public class PendingRelationship
     {
         public string SourceTableId { get; set; } = "";
@@ -1608,41 +1796,176 @@
         StateHasChanged();
     }
 
-    private void CloseExcelDialog()
-    {
-        _showExcelModal = false;
-        StateHasChanged();
-    }
-
     public async Task ShowExcelUpload()
     {
+        _showExcelModal = true;
+        StateHasChanged();
+
+        // Focus the modal when it opens
         try
         {
-            await JSRuntime.InvokeVoidAsync("triggerClick", "excelFileInput");
+            await Task.Delay(100); // Small delay to ensure modal is rendered
+            await JSRuntime.InvokeVoidAsync("console.log", "Excel upload modal opened");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error in ShowExcelUpload: {ex}");
-            await JSRuntime.InvokeVoidAsync("console.error", $"ShowExcelUpload failed: {ex}");
+        }
+    }
+
+    private async Task HandleExcelFileSelected(InputFileChangeEventArgs e)
+    {
+        _excelErrorMessage = string.Empty;
+        _excelTables.Clear();
+        _excelTableSelections.Clear();
+        _processedSheets = 0;
+        _processingProgress = 0;
+
+        var file = e.File;
+        if (file == null) return;
+
+        if (file.Size > MaxExcelFileSize)
+        {
+            _excelErrorMessage = "File size exceeds 10MB limit.";
+            return;
         }
 
+        if (!file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) &&
+            !file.Name.EndsWith(".xls", StringComparison.OrdinalIgnoreCase))
+        {
+            _excelErrorMessage = "Please select a valid Excel file (.xlsx or .xls).";
+            return;
+        }
+
+        _excelProcessing = true;
+        StateHasChanged();
+
+        try
+        {
+            using var stream = file.OpenReadStream(MaxExcelFileSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+
+            _processingProgress = 30;
+            StateHasChanged();
+            await Task.Delay(100);
+
+            _excelTables = await SchemaService.LoadTablesFromExcelAsync(ms);
+
+            _processingProgress = 80;
+            StateHasChanged();
+
+            // Initialize selections - all selected by default
+            _excelTableSelections = new List<bool>();
+            for (int i = 0; i < _excelTables.Count; i++)
+            {
+                _excelTableSelections.Add(true);
+                _processedSheets++;
+            }
+
+            _processingProgress = 100;
+            await Task.Delay(300);
+        }
+        catch (Exception ex)
+        {
+            _excelErrorMessage = $"Error processing file: {ex.Message}";
+            Console.WriteLine($"Excel processing error: {ex}");
+        }
+        finally
+        {
+            _excelProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+
+    private void SelectAllExcelTables()
+    {
+        for (int i = 0; i < _excelTableSelections.Count; i++)
+        {
+            _excelTableSelections[i] = true;
+        }
         StateHasChanged();
     }
 
-    private async Task HandleExcelSelected(InputFileChangeEventArgs e)
+    private void SelectNoExcelTables()
     {
-        var file = e.File;
-        if (file != null)
+        for (int i = 0; i < _excelTableSelections.Count; i++)
         {
-            using var stream = file.OpenReadStream(maxAllowedSize: 10_000_000);
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
-
-            byte[] fileBytes = ms.ToArray();
-            Console.WriteLine($"Uploaded {file.Name} with {fileBytes.Length} bytes");
+            _excelTableSelections[i] = false;
         }
+        StateHasChanged();
     }
 
+    private bool HasSelectedExcelTables()
+    {
+        return _excelTableSelections.Any(selected => selected);
+    }
+
+    private int GetSelectedExcelTableCount()
+    {
+        return _excelTableSelections.Count(selected => selected);
+    }
+
+    private async Task ImportExcelTables()
+    {
+        var selectedTablesList = new List<TableModel>();
+
+        for (int i = 0; i < _excelTables.Count; i++)
+        {
+            if (i < _excelTableSelections.Count && _excelTableSelections[i])
+            {
+                selectedTablesList.Add(_excelTables[i]);
+            }
+        }
+
+        if (!selectedTablesList.Any())
+        {
+            _excelErrorMessage = "Please select at least one sheet to import.";
+            return;
+        }
+
+        // Import the tables
+        await HandleExcelTablesImported(selectedTablesList);
+
+        // Handle AI relationship suggestions if enabled
+        if (_useExcelAI && OpenAIService != null && selectedTablesList.Count > 1)
+        {
+            _excelProcessing = true;
+            StateHasChanged();
+
+            try
+            {
+                var relationships = await OpenAIService.SuggestRelationshipsAsync(selectedTablesList);
+                await HandleRelationshipsSuggested(relationships);
+            }
+            catch (Exception ex)
+            {
+                _excelErrorMessage = $"AI suggestion error: {ex.Message}";
+            }
+            finally
+            {
+                _excelProcessing = false;
+                StateHasChanged();
+            }
+        }
+
+        CloseExcelDialog();
+    }
+
+
+    private void CloseExcelDialog()
+    {
+        _showExcelModal = false;
+        _excelTables.Clear();
+        _excelTableSelections.Clear();
+        _excelErrorMessage = string.Empty;
+        _excelProcessing = false;
+        _processedSheets = 0;
+        _processingProgress = 0;
+        StateHasChanged();
+    }
     private async Task ConnectToDatabase()
     {
         if (string.IsNullOrWhiteSpace(ConnectionString))
@@ -1682,20 +2005,133 @@
         }
     }
 
-    private Task HandleExcelTablesImported(List<TableModel> tables)
+    private async Task HandleExcelTablesImported(List<TableModel> tables)
     {
-        _queryModel.Tables.AddRange(tables);
-        PositionTables();
-        CloseExcelDialog();
-        UpdateSqlPreview();
-        return Task.CompletedTask;
+        if (tables?.Any() == true)
+        {
+            // Set positions for new Excel tables
+            PositionExcelTables(tables);
+
+            // Mark tables as Excel tables for styling
+            foreach (var table in tables)
+            {
+                table.IsFromExcel = true;
+                // Ensure proper sizing for Excel tables
+                if (table.Size.Width == 0)
+                    table.Size.Width = 280;
+                if (table.Size.Height == 0)
+                    table.Size.Height = Math.Max(150, 40 + (table.Columns.Count * 30));
+            }
+
+            // Add Excel tables to the query model
+            _queryModel.Tables.AddRange(tables);
+
+            // Update SQL preview
+            UpdateSqlPreview();
+
+            // Refresh the canvas
+            await RefreshRelationshipDiagram();
+
+            // Close the Excel modal
+            CloseExcelDialog();
+
+            // Show success message
+            try
+            {
+                if (_jsModule != null)
+                {
+                    await _jsModule.InvokeVoidAsync("showDomainFeedback",
+                        $"Successfully imported {tables.Count} Excel sheet(s) to canvas", "success");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error showing feedback: {ex.Message}");
+            }
+
+            StateHasChanged();
+        }
     }
 
-    private Task HandleRelationshipsSuggested(List<RelationshipModel> relationships)
+    private void PositionExcelTables(List<TableModel> excelTables)
     {
-        _queryModel.Relationships.AddRange(relationships);
-        StateHasChanged();
-        return Task.CompletedTask;
+        if (!excelTables.Any()) return;
+
+        // Find the rightmost position of existing tables to avoid overlap
+        int startX = 50;
+        int startY = 50;
+
+        if (_queryModel.Tables.Any())
+        {
+            var existingTables = _queryModel.Tables.Where(t => !excelTables.Contains(t)).ToList();
+            if (existingTables.Any())
+            {
+                startX = existingTables.Max(t => t.Position.X + t.Size.Width) + 100;
+            }
+        }
+
+        int currentX = startX;
+        int currentY = startY;
+        int maxHeight = 0;
+        const int tableSpacing = 320;
+        const int rowSpacing = 200;
+        const int tablesPerRow = 3;
+
+        for (int i = 0; i < excelTables.Count; i++)
+        {
+            var table = excelTables[i];
+
+            table.Position = new Position { X = currentX, Y = currentY };
+
+            currentX += tableSpacing;
+            maxHeight = Math.Max(maxHeight, table.Size.Height);
+
+            if ((i + 1) % tablesPerRow == 0)
+            {
+                currentX = startX;
+                currentY += maxHeight + rowSpacing;
+                maxHeight = 0;
+            }
+        }
+    }
+
+    private bool GetExcelTableSelected(int index)
+    {
+        return index >= 0 && index < _excelTableSelections.Count ? _excelTableSelections[index] : false;
+    }
+
+    private void SetExcelTableSelected(int index, bool value)
+    {
+        if (index >= 0 && index < _excelTableSelections.Count)
+        {
+            _excelTableSelections[index] = value;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleRelationshipsSuggested(List<RelationshipModel> relationships)
+    {
+        if (relationships?.Any() == true)
+        {
+            _queryModel.Relationships.AddRange(relationships);
+            UpdateSqlPreview();
+            await RefreshRelationshipDiagram();
+
+            try
+            {
+                if (_jsModule != null)
+                {
+                    await _jsModule.InvokeVoidAsync("showDomainFeedback",
+                        $"AI suggested {relationships.Count} potential relationship(s)", "success");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error showing AI feedback: {ex.Message}");
+            }
+
+            StateHasChanged();
+        }
     }
 
     private void PositionTables()
@@ -1851,50 +2287,102 @@
 
     private void GenerateQuery()
     {
-        // Only include tables that have relationships or selected columns
+        // Include both SQL and Excel tables that have relationships or selected columns
         var relevantTables = _queryModel.Tables.Where(t =>
-        t.Columns.Any(c => c.IsSelected) ||
-        _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
+            t.Columns.Any(c => c.IsSelected) ||
+            _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
         ).ToList();
 
         if (!relevantTables.Any())
         {
-            _generatedSql = "-- No tables selected or connected. Please select columns or create relationships.";
+            _generatedSql = @"-- No tables selected or connected.
+                            -- Please select columns or create relationships between tables.
+                            -- For Excel tables: Select columns to include in your query.
+                            -- For SQL Server tables: Connect to database and select tables.";
             StateHasChanged();
             return;
         }
 
-        // Exclude orphan tables (tables with no relationships) unless they have selected columns
-        var tablesWithRelationships = _queryModel.Tables.Where(t =>
-        _queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id)
-        ).ToList();
+        // Separate Excel and SQL tables for different handling if needed
+        var excelTables = relevantTables.Where(t => t.IsFromExcel).ToList();
+        var sqlTables = relevantTables.Where(t => !t.IsFromExcel).ToList();
 
-        var orphanTablesWithSelectedColumns = _queryModel.Tables.Where(t =>
-        !_queryModel.Relationships.Any(r => r.SourceTableId == t.Id || r.TargetTableId == t.Id) &&
-        t.Columns.Any(c => c.IsSelected)
-        ).ToList();
-
-        var finalTables = tablesWithRelationships.Concat(orphanTablesWithSelectedColumns).ToList();
-
-        if (!finalTables.Any())
+        // If we have Excel tables, add a comment explaining the generated query
+        if (excelTables.Any())
         {
-            _generatedSql = "-- No connected tables found. Create relationships between tables or select columns.";
-            StateHasChanged();
-            return;
+            var hasConnections = _queryModel.Relationships.Any();
+            var prefix = hasConnections
+                ? "-- Query combining Excel data with database tables\n"
+                : "-- Query based on Excel sheet structure\n-- Note: This shows the SQL structure. Excel data would need to be imported to a database to execute.\n\n";
+
+            var query = SqlGenerator.GenerateQuery(_queryModel);
+            _generatedSql = prefix + query;
         }
-
-        // Create a temporary query model with only relevant tables
-        var queryModelForGeneration = new QueryModel
+        else
         {
-            Tables = finalTables,
-            Relationships = _queryModel.Relationships.Where(r =>
-            finalTables.Any(t => t.Id == r.SourceTableId) &&
-            finalTables.Any(t => t.Id == r.TargetTableId)
-        ).ToList()
-        };
-
-        UpdateSqlPreview(queryModelForGeneration);
+            UpdateSqlPreview();
+        }
+        StateHasChanged();
     }
+
+    private async Task ClearExcelTables()
+    {
+        var excelTables = _queryModel.Tables.Where(t => t.IsFromExcel).ToList();
+
+        if (excelTables.Any())
+        {
+            // Remove relationships that involve Excel tables
+            var relationshipsToRemove = _queryModel.Relationships.Where(r =>
+                excelTables.Any(t => t.Id == r.SourceTableId) ||
+                excelTables.Any(t => t.Id == r.TargetTableId)
+            ).ToList();
+
+            foreach (var rel in relationshipsToRemove)
+            {
+                _queryModel.Relationships.Remove(rel);
+            }
+
+            // Remove Excel tables
+            foreach (var table in excelTables)
+            {
+                _queryModel.Tables.Remove(table);
+            }
+
+            UpdateSqlPreview();
+            await RefreshRelationshipDiagram();
+            StateHasChanged();
+
+            try
+            {
+                if (_jsModule != null)
+                {
+                    await _jsModule.InvokeVoidAsync("showDomainFeedback",
+                        $"Removed {excelTables.Count} Excel table(s) from canvas", "success");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error showing clear feedback: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ShowExcelTableActions()
+    {
+        var excelTableCount = _queryModel.Tables.Count(t => t.IsFromExcel);
+
+        if (excelTableCount == 0)
+        {
+            await ShowExcelUpload();
+        }
+        else
+        {
+            // Show context menu or actions for existing Excel tables
+            // This could be expanded to show options like "Add More Excel Files", "Clear Excel Tables", etc.
+            await ShowExcelUpload(); // For now, just show upload dialog
+        }
+    }
+
 
     [JSInvokable]
     public async Task UpdateTablePosition(string tableId, double x, double y)
@@ -3159,7 +3647,7 @@
                 if (_jsModule != null)
                 {
                     await _jsModule.InvokeVoidAsync("updateDomainBoundsAnimated",
-                        domainId, domain.Position.X, domain.Position.Y
+                        domainId, domain.Position.X, domain.Position.Y,
                         domain.Size.Width, domain.Size.Height, true);
                 }
             }

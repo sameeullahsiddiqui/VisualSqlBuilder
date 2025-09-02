@@ -4,78 +4,313 @@
 
 <div class="excel-upload">
     <div class="modal fade" id="excelUploadModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Upload Excel File</h5>
+                    <h5 class="modal-title">
+                        <i class="bi bi-file-earmark-excel"></i>
+                        Upload Excel File
+                    </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Select Excel File:</label>
-                        <InputFile OnChange="@HandleFileSelected" accept=".xlsx,.xls" class="form-control" />
+                        <InputFile OnChange="@HandleFileSelected"
+                                   accept=".xlsx,.xls"
+                                   class="form-control"
+                                   multiple="false" />
+                        <div class="form-text">
+                            <i class="bi bi-info-circle"></i>
+                            Supported formats: .xlsx, .xls (Max size: 10MB)
+                        </div>
                     </div>
 
                     @if (_isProcessing)
                     {
                         <div class="alert alert-info">
                             <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                            Processing Excel file...
+                            Processing Excel file... Found @_processedSheets sheets
                         </div>
+
+                        @if (_processingProgress > 0)
+                        {
+                            <div class="progress mb-3" style="height: 6px;">
+                                <div class="progress-bar"
+                                     role="progressbar"
+                                     style="width: @(_processingProgress)%"
+                                     aria-valuenow="@_processingProgress"
+                                     aria-valuemin="0"
+                                     aria-valuemax="100">
+                                </div>
+                            </div>
+                        }
                     }
 
                     @if (_uploadedTables.Any())
                     {
-                        <div class="mb-3">
-                            <h6>Detected Sheets/Tables:</h6>
-                            <div class="table-responsive">
-                                <table class="table table-sm">
-                                    <thead>
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6>
+                                    <i class="bi bi-table"></i>
+                                    Detected Sheets (@_uploadedTables.Count):
+                                </h6>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button type="button" class="btn btn-outline-primary" @onclick="SelectAllTables">
+                                        <i class="bi bi-check-all"></i> Select All
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="SelectNoneTables">
+                                        <i class="bi bi-x-square"></i> Select None
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                                <table class="table table-sm table-hover">
+                                    <thead class="table-light sticky-top">
                                         <tr>
+                                            <th style="width: 50px;">
+                                                <input type="checkbox"
+                                                       class="form-check-input"
+                                                       @onchange="ToggleAllTables"
+                                                       checked="@_allTablesSelected" />
+                                            </th>
                                             <th>Sheet Name</th>
                                             <th>Columns</th>
-                                            <th>Import</th>
+                                            <th>Rows</th>
+                                            <th>Data Types</th>
+                                            <th>Preview</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         @foreach (var table in _uploadedTables)
                                         {
-                                            <tr>
-                                                <td>@table.Name</td>
-                                                <td>@table.Columns.Count columns</td>
+                                            <tr class="@((_selectedTables.ContainsKey(table.Id) && _selectedTables[table.Id]) ? "table-success" : "")">
                                                 <td>
-                                                    <input type="checkbox" @bind="_selectedTables[table.Id]" />
+                                                    <input type="checkbox"
+                                                           class="form-check-input"
+                                                           @bind="_selectedTables[table.Id]"
+                                                           @bind:after="UpdateSelectAllState" />
+                                                </td>
+                                                <td>
+                                                    <div class="d-flex align-items-center">
+                                                        <i class="bi bi-file-earmark-spreadsheet text-success me-2"></i>
+                                                        <div>
+                                                            <strong>@table.Name</strong>
+                                                            @if (!string.IsNullOrEmpty(table.Description))
+                                                            {
+                                                                <br>
+                                                    
+                                                                <small class="text-muted">@table.Description</small>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-primary">@table.Columns.Count</span>
+                                                    @if (table.Columns.Any(c => c.IsPrimaryKey))
+                                                    {
+                                                        <i class="bi bi-key-fill text-warning" title="Has Primary Key"></i>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-info">@(table.RowCount ?? 0)</span>
+                                                </td>
+                                                <td>
+                                                    <div class="data-types-preview">
+                                                        @{
+                                                            var dataTypes = table.Columns.GroupBy(c => c.DataType).Select(g => new { Type = g.Key, Count = g.Count() }).ToList();
+                                                        }
+                                                        @foreach (var dt in dataTypes.Take(3))
+                                                        {
+                                                            <span class="badge bg-light text-dark me-1" style="font-size: 10px;">
+                                                                @dt.Type (@dt.Count)
+                                                            </span>
+                                                        }
+                                                        @if (dataTypes.Count > 3)
+                                                        {
+                                                            <span class="badge bg-secondary" style="font-size: 10px;">+@(dataTypes.Count - 3)</span>
+                                                        }
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <button type="button"
+                                                            class="btn btn-sm btn-outline-info"
+                                                            @onclick="() => ShowTablePreview(table)"
+                                                            title="Preview Data">
+                                                        <i class="bi bi-eye"></i>
+                                                    </button>
                                                 </td>
                                             </tr>
                                         }
                                     </tbody>
                                 </table>
                             </div>
+
+                            @* Table Preview Modal *@
+                            @if (_previewTable != null && _showPreview)
+                            {
+                                <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                                    <div class="modal-dialog modal-xl">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h6 class="modal-title">
+                                                    <i class="bi bi-table"></i>
+                                                    Preview: @_previewTable.Name
+                                                </h6>
+                                                <button type="button" class="btn-close" @onclick="CloseTablePreview"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                @if (_previewData?.Any() == true)
+                                                {
+                                                    <div class="table-responsive" style="max-height: 500px;">
+                                                        <table class="table table-sm table-striped">
+                                                            <thead class="table-dark sticky-top">
+                                                                <tr>
+                                                                    @foreach (var column in _previewTable.Columns)
+                                                                    {
+                                                                        <th style="min-width: 100px;">
+                                                                            <div>
+                                                                                @column.Name
+                                                                                <br>
+                                                                                <small class="text-muted">(@column.DataType)</small>
+                                                                            </div>
+                                                                        </th>
+                                                                    }
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var row in _previewData.Take(50))
+                                                                {
+                                                                    <tr>
+                                                                        @for (int i = 0; i < _previewTable.Columns.Count; i++)
+                                                                        {
+                                                                            <td style="font-size: 12px;">
+                                                                                @(i < row.Length ? (row[i]?.ToString() ?? "NULL") : "")
+                                                                            </td>
+                                                                        }
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                    <div class="mt-2">
+                                                        <small class="text-muted">
+                                                            Showing first 50 rows of @(_previewTable.RowCount ?? 0) total rows
+                                                        </small>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="alert alert-warning">
+                                                        <i class="bi bi-exclamation-triangle"></i>
+                                                        No data available for preview
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            <!-- AI Relationship Suggestions -->
+                            @if (OpenAIService != null && _uploadedTables.Count > 1)
+                            {
+                                <div class="mb-3">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" @bind="_useAI" id="useAI">
+                                                <label class="form-check-label" for="useAI">
+                                                    <i class="bi bi-robot"></i>
+                                                    <strong>Use AI to suggest relationships</strong>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        @if (_useAI)
+                                        {
+                                            <div class="card-body">
+                                                <p class="card-text mb-2">
+                                                    <small class="text-muted">
+                                                        AI will analyze column names and data types to suggest possible relationships between sheets.
+                                                    </small>
+                                                </p>
+                                                <div class="mb-2">
+                                                    <label class="form-label">Relationship Detection Sensitivity:</label>
+                                                    <select class="form-select form-select-sm" @bind="_aiSensitivity">
+                                                        <option value="conservative">Conservative - Only obvious relationships</option>
+                                                        <option value="moderate">Moderate - Balanced approach</option>
+                                                        <option value="aggressive">Aggressive - Find more potential relationships</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
                         </div>
 
-                        @if (OpenAIService != null)
-                        {
-                            <div class="mb-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" @bind="_useAI" id="useAI">
-                                    <label class="form-check-label" for="useAI">
-                                        Use AI to suggest relationships
-                                    </label>
+                        <!-- Import Summary -->
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="card border-primary">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-file-earmark-spreadsheet fs-2 text-primary"></i>
+                                        <h6 class="card-title">Total Sheets</h6>
+                                        <h4 class="text-primary">@_uploadedTables.Count</h4>
+                                    </div>
                                 </div>
                             </div>
-                        }
+                            <div class="col-md-4">
+                                <div class="card border-success">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-check-circle fs-2 text-success"></i>
+                                        <h6 class="card-title">Selected</h6>
+                                        <h4 class="text-success">@_selectedTables.Count(kvp => kvp.Value)</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-info">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-diagram-2 fs-2 text-info"></i>
+                                        <h6 class="card-title">Total Columns</h6>
+                                        <h4 class="text-info">@_uploadedTables.Where(t => _selectedTables.ContainsKey(t.Id) && _selectedTables[t.Id]).Sum(t => t.Columns.Count)</h4>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     }
 
                     @if (!string.IsNullOrEmpty(_errorMessage))
                     {
-                        <div class="alert alert-danger">@_errorMessage</div>
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            @_errorMessage
+                        </div>
+                    }
+
+                    @if (_processingMessages.Any())
+                    {
+                        <div class="mt-3">
+                            <h6>Processing Log:</h6>
+                            <div class="bg-light p-2 rounded" style="max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 12px;">
+                                @foreach (var message in _processingMessages.TakeLast(10))
+                                {
+                                    <div>@message</div>
+                                }
+                            </div>
+                        </div>
                     }
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" @onclick="ImportTables"
-                        disabled="@(!_uploadedTables.Any() || _isProcessing)">
-                        Import Selected Tables
+                    <button type="button"
+                            class="btn btn-primary"
+                            @onclick="ImportTables"
+                            disabled="@(!HasSelectedTables() || _isProcessing)">
+                        <i class="bi bi-upload"></i>
+                        Import @(_selectedTables.Count(kvp => kvp.Value)) Selected Sheet@((_selectedTables.Count(kvp => kvp.Value) != 1) ? "s" : "")
                     </button>
                 </div>
             </div>
@@ -94,12 +329,21 @@
     private string _errorMessage = string.Empty;
     private const long MaxFileSize = 10 * 1024 * 1024; // 10MB
 
+    // Enhanced properties
+    private int _processedSheets = 0;
+    private int _processingProgress = 0;
+    private List<string> _processingMessages = new();
+    private bool _allTablesSelected = true;
+    private string _aiSensitivity = "moderate";
+
+    // Preview functionality
+    private bool _showPreview = false;
+    private Models.TableModel? _previewTable;
+    private List<object[]>? _previewData;
+
     protected override void OnInitialized()
     {
-        // foreach (var table in SchemaService.GetTables())
-        // {
-        //     _selectedTables[table.Id] = true; // default checked
-        // }
+        // Initialize component
     }
 
     private async Task HandleFileSelected(InputFileChangeEventArgs e)
@@ -107,66 +351,196 @@
         _errorMessage = string.Empty;
         _uploadedTables.Clear();
         _selectedTables.Clear();
+        _processingMessages.Clear();
+        _processedSheets = 0;
+        _processingProgress = 0;
 
-        if (e.File.Size > MaxFileSize)
+        var file = e.File;
+        if (file == null) return;
+
+        if (file.Size > MaxFileSize)
         {
             _errorMessage = "File size exceeds 10MB limit.";
             return;
         }
 
+        if (!file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) &&
+            !file.Name.EndsWith(".xls", StringComparison.OrdinalIgnoreCase))
+        {
+            _errorMessage = "Please select a valid Excel file (.xlsx or .xls).";
+            return;
+        }
+
         _isProcessing = true;
+        AddProcessingMessage($"Starting to process: {file.Name} ({file.Size:N0} bytes)");
 
         try
         {
-            using var stream = e.File.OpenReadStream(MaxFileSize);
+            using var stream = file.OpenReadStream(MaxFileSize);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
             ms.Position = 0;
 
+            AddProcessingMessage("File uploaded, analyzing sheets...");
+            _processingProgress = 20;
+            StateHasChanged();
+            await Task.Delay(100); // Allow UI update
+
             _uploadedTables = await SchemaService.LoadTablesFromExcelAsync(ms);
 
+            AddProcessingMessage($"Found {_uploadedTables.Count} sheets");
+            _processingProgress = 80;
+            StateHasChanged();
+
+            // Auto-select all tables and update progress
             foreach (var table in _uploadedTables)
             {
                 _selectedTables[table.Id] = true;
+                _processedSheets++;
+                AddProcessingMessage($"Processed sheet: {table.Name} ({table.Columns.Count} columns, ~{table.RowCount ?? 0} rows)");
             }
+
+            _processingProgress = 100;
+            AddProcessingMessage("Processing complete!");
+
+            // Small delay to show completion
+            await Task.Delay(500);
+
+            UpdateSelectAllState();
         }
         catch (Exception ex)
         {
             _errorMessage = $"Error processing file: {ex.Message}";
+            AddProcessingMessage($"ERROR: {ex.Message}");
         }
         finally
         {
             _isProcessing = false;
+            StateHasChanged();
         }
+    }
+
+    private void AddProcessingMessage(string message)
+    {
+        _processingMessages.Add($"[{DateTime.Now:HH:mm:ss}] {message}");
+        StateHasChanged();
+    }
+
+    private void SelectAllTables()
+    {
+        foreach (var table in _uploadedTables)
+        {
+            _selectedTables[table.Id] = true;
+        }
+        _allTablesSelected = true;
+        StateHasChanged();
+    }
+
+    private void SelectNoneTables()
+    {
+        foreach (var table in _uploadedTables)
+        {
+            _selectedTables[table.Id] = false;
+        }
+        _allTablesSelected = false;
+        StateHasChanged();
+    }
+
+    private void ToggleAllTables(ChangeEventArgs e)
+    {
+        var selectAll = e.Value?.ToString() == "True";
+        foreach (var table in _uploadedTables)
+        {
+            _selectedTables[table.Id] = selectAll;
+        }
+        _allTablesSelected = selectAll;
+        StateHasChanged();
+    }
+
+    private void UpdateSelectAllState()
+    {
+        if (_uploadedTables.Any())
+        {
+            var selectedCount = _selectedTables.Count(kvp => kvp.Value);
+            _allTablesSelected = selectedCount == _uploadedTables.Count;
+        }
+        StateHasChanged();
+    }
+
+    private bool HasSelectedTables()
+    {
+        return _selectedTables.Any(kvp => kvp.Value);
+    }
+
+    private async Task ShowTablePreview(Models.TableModel table)
+    {
+        _previewTable = table;
+
+        try
+        {
+            // Load preview data - implement this method in SchemaService
+            _previewData = await LoadTablePreviewData(table);
+            _showPreview = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error loading preview: {ex.Message}";
+        }
+    }
+
+    private void CloseTablePreview()
+    {
+        _showPreview = false;
+        _previewTable = null;
+        _previewData = null;
+        StateHasChanged();
+    }
+
+    private async Task<List<object[]>> LoadTablePreviewData(Models.TableModel table)
+    {
+        // This is a placeholder - you'll need to implement this in your SchemaService
+        // to actually load and return sample data from the Excel sheet
+        return new List<object[]>();
     }
 
     private async Task ImportTables()
     {
         var selectedTablesList = _uploadedTables
-        .Where(t => _selectedTables.ContainsKey(t.Id) && _selectedTables[t.Id])
-        .ToList();
+            .Where(t => _selectedTables.ContainsKey(t.Id) && _selectedTables[t.Id])
+            .ToList();
 
-        if (selectedTablesList.Any())
+        if (!selectedTablesList.Any())
         {
-            await OnTablesImported.InvokeAsync(selectedTablesList);
+            _errorMessage = "Please select at least one sheet to import.";
+            return;
+        }
 
-            if (_useAI && OpenAIService != null)
+        // Trigger the import event
+        await OnTablesImported.InvokeAsync(selectedTablesList);
+
+        if (_useAI && OpenAIService != null && selectedTablesList.Count > 1)
+        {
+            _isProcessing = true;
+            AddProcessingMessage("Requesting AI relationship analysis...");
+
+            try
             {
-                _isProcessing = true;
-                try
-                {
-                    var relationships = await OpenAIService.SuggestRelationshipsAsync(selectedTablesList);
-                    await OnRelationshipsSuggested.InvokeAsync(relationships);
-                }
-                catch (Exception ex)
-                {
-                    _errorMessage = $"AI suggestion error: {ex.Message}";
-                }
-                finally
-                {
-                    _isProcessing = false;
-                }
+                var relationships = await OpenAIService.SuggestRelationshipsAsync(selectedTablesList);
+                AddProcessingMessage($"AI found {relationships.Count} potential relationships");
+                await OnRelationshipsSuggested.InvokeAsync(relationships);
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"AI suggestion error: {ex.Message}";
+                AddProcessingMessage($"AI Error: {ex.Message}");
+            }
+            finally
+            {
+                _isProcessing = false;
             }
         }
+
+        AddProcessingMessage($"Successfully imported {selectedTablesList.Count} sheets");
     }
 }
