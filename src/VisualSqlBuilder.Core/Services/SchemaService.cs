@@ -9,10 +9,13 @@ public interface ISchemaService
 {
     Task<List<TableModel>> LoadTablesFromSqlServerAsync(string connectionString);
     Task<List<RelationshipModel>> LoadRelationshipsFromSqlServerAsync(string connectionString, List<TableModel> tables);
-    Task<List<TableModel>> LoadTablesFromExcelAsync(Stream excelStream);
+    List<TableModel> LoadTablesFromExcel(Stream excelStream);
     Task<DataTable> ExecuteQueryAsync(string connectionString, string sql, int maxRows = 100);
-    Task<List<object[]>> LoadExcelPreviewDataAsync(Stream excelStream, string sheetName, int maxRows = 50);
-    Task<ExcelWorkbookInfo> GetExcelWorkbookInfoAsync(Stream excelStream);
+    List<object[]> LoadExcelPreviewData(Stream excelStream, string sheetName, int maxRows = 50);
+    ExcelWorkbookInfo GetExcelWorkbookInfo(Stream excelStream);
+
+    DataTable GenerateExcelMockResults(List<TableModel> tables);
+    DataTable GenerateMixedMockResults(List<TableModel> tables);
 }
 
 public class SchemaService : ISchemaService
@@ -150,7 +153,7 @@ public class SchemaService : ISchemaService
         return relationships;
     }
 
-    public async Task<List<TableModel>> LoadTablesFromExcelAsync(Stream excelStream)
+    public List<TableModel> LoadTablesFromExcel(Stream excelStream)
     {
         var tables = new List<TableModel>();
 
@@ -241,7 +244,7 @@ public class SchemaService : ISchemaService
         }
     }
 
-    public async Task<ExcelWorkbookInfo> GetExcelWorkbookInfoAsync(Stream excelStream)
+    public ExcelWorkbookInfo GetExcelWorkbookInfo(Stream excelStream)
     {
         try
         {
@@ -304,7 +307,7 @@ public class SchemaService : ISchemaService
         }
     }
 
-    public async Task<List<object[]>> LoadExcelPreviewDataAsync(Stream excelStream, string sheetName, int maxRows = 50)
+    public List<object[]> LoadExcelPreviewData(Stream excelStream, string sheetName, int maxRows = 50)
     {
         var previewData = new List<object[]>();
 
@@ -580,6 +583,169 @@ public class SchemaService : ISchemaService
         // Additional heuristics: column name contains "id", "key", etc.
         var columnName = worksheet.Cell(1, columnNumber).Value.ToString().ToLower();
         return values.Count > 0 && (columnName.Contains("id") || columnName.Contains("key") || columnName == "pk");
+    }
+
+    public DataTable GenerateExcelMockResults(List<TableModel> tables)
+    {
+        var dataTable = new DataTable();
+        var selectedColumns = new List<(TableModel table, ColumnModel column)>();
+
+        // Collect all selected columns from all tables
+        foreach (var table in tables.Where(t => t.IsFromExcel))
+        {
+            foreach (var column in table.Columns.Where(c => c.IsSelected))
+            {
+                var columnName = string.IsNullOrEmpty(column.QueryAlias) ? column.Name : column.QueryAlias;
+
+                // Handle duplicate column names by prefixing with table name
+                var finalColumnName = columnName;
+                if (tables.Count > 1)
+                {
+                    finalColumnName = $"{table.Name}_{columnName}";
+                }
+
+                // Ensure unique column names
+                var counter = 1;
+                var originalName = finalColumnName;
+                while (dataTable.Columns.Contains(finalColumnName))
+                {
+                    finalColumnName = $"{originalName}_{counter}";
+                    counter++;
+                }
+
+                var columnType = GetSystemTypeFromSqlType(column.DataType);
+                dataTable.Columns.Add(finalColumnName, columnType);
+                selectedColumns.Add((table, column));
+            }
+        }
+
+        if (dataTable.Columns.Count == 0)
+        {
+            // No columns selected, show table structure info
+            dataTable.Columns.Add("Table_Name", typeof(string));
+            dataTable.Columns.Add("Column_Count", typeof(int));
+            dataTable.Columns.Add("Estimated_Rows", typeof(int));
+            dataTable.Columns.Add("Data_Source", typeof(string));
+
+            foreach (var table in tables.Where(t => t.IsFromExcel))
+            {
+                var row = dataTable.NewRow();
+                row["Table_Name"] = table.Name;
+                row["Column_Count"] = table.Columns.Count;
+                row["Estimated_Rows"] = table.RowCount ?? 0;
+                row["Data_Source"] = "Excel Sheet";
+                dataTable.Rows.Add(row);
+            }
+        }
+        else
+        {
+            // Generate sample rows based on data types
+            var sampleRowCount = Math.Min(10, tables.Max(t => t.RowCount ?? 5));
+
+            for (int rowIndex = 0; rowIndex < sampleRowCount; rowIndex++)
+            {
+                var row = dataTable.NewRow();
+
+                for (int colIndex = 0; colIndex < selectedColumns.Count; colIndex++)
+                {
+                    var (table, column) = selectedColumns[colIndex];
+                    row[colIndex] = GenerateSampleValue(column.DataType, rowIndex);
+                }
+
+                dataTable.Rows.Add(row);
+            }
+        }
+
+        return dataTable;
+    }
+
+    public DataTable GenerateMixedMockResults(List<TableModel> tables)
+    {
+        var dataTable = new DataTable();
+
+        // Add informational columns
+        dataTable.Columns.Add("Query_Component", typeof(string));
+        dataTable.Columns.Add("Table_Name", typeof(string));
+        dataTable.Columns.Add("Data_Source", typeof(string));
+        dataTable.Columns.Add("Selected_Columns", typeof(string));
+        dataTable.Columns.Add("Status", typeof(string));
+
+        foreach (var table in tables)
+        {
+            var selectedCols = table.Columns.Where(c => c.IsSelected).Select(c => c.Name);
+            var row = dataTable.NewRow();
+
+            row["Query_Component"] = table.IsFromExcel ? "FROM Excel" : "FROM Database";
+            row["Table_Name"] = table.Name;
+            row["Data_Source"] = table.IsFromExcel ? "Excel Sheet" : "SQL Server";
+            row["Selected_Columns"] = string.Join(", ", selectedCols);
+            row["Status"] = table.IsFromExcel ? "Structure Only" : "Requires Connection";
+
+            dataTable.Rows.Add(row);
+        }
+
+        // Add note about mixed query
+        var noteRow = dataTable.NewRow();
+        noteRow["Query_Component"] = "NOTE";
+        noteRow["Table_Name"] = "Mixed Data Sources";
+        noteRow["Data_Source"] = "Excel + SQL Server";
+        noteRow["Selected_Columns"] = "To execute this query, Excel data needs to be imported to SQL Server";
+        noteRow["Status"] = "Integration Required";
+        dataTable.Rows.Add(noteRow);
+
+        return dataTable;
+    }
+
+    private Type GetSystemTypeFromSqlType(string sqlType)
+    {
+        var lowerType = sqlType.ToLower();
+
+        if (lowerType.StartsWith("nvarchar") || lowerType.StartsWith("varchar") ||
+            lowerType.StartsWith("char") || lowerType.StartsWith("text"))
+            return typeof(string);
+
+        if (lowerType.StartsWith("int") || lowerType == "bigint")
+            return typeof(int);
+
+        if (lowerType.StartsWith("decimal") || lowerType.StartsWith("float") || lowerType == "real")
+            return typeof(decimal);
+
+        if (lowerType.StartsWith("datetime") || lowerType == "date" || lowerType == "time")
+            return typeof(DateTime);
+
+        if (lowerType == "bit")
+            return typeof(bool);
+
+        if (lowerType == "uniqueidentifier")
+            return typeof(Guid);
+
+        return typeof(string); // Default fallback
+    }
+
+    private object GenerateSampleValue(string dataType, int rowIndex)
+    {
+        var lowerType = dataType.ToLower();
+
+        if (lowerType.StartsWith("nvarchar") || lowerType.StartsWith("varchar") ||
+            lowerType.StartsWith("char") || lowerType.StartsWith("text"))
+            return $"Sample Text {rowIndex + 1}";
+
+        if (lowerType.StartsWith("int") || lowerType == "bigint")
+            return 1000 + rowIndex;
+
+        if (lowerType.StartsWith("decimal") || lowerType.StartsWith("float") || lowerType == "real")
+            return Math.Round(100.50m + (rowIndex * 10.25m), 2);
+
+        if (lowerType.StartsWith("datetime") || lowerType == "date" || lowerType == "time")
+            return DateTime.Now.AddDays(-rowIndex);
+
+        if (lowerType == "bit")
+            return rowIndex % 2 == 0;
+
+        if (lowerType == "uniqueidentifier")
+            return Guid.NewGuid();
+
+        return $"Value {rowIndex + 1}";
     }
 }
 

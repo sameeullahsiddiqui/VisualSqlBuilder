@@ -17,10 +17,16 @@ public interface ISqlGeneratorService
 
 public class SqlGeneratorService : ISqlGeneratorService
 {
+    private readonly HashSet<string> _usedAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _tableAliasCache = new Dictionary<string, string>();
+
     public string GenerateQuery(QueryModel queryModel)
     {
         try
         {
+            // Clear alias tracking at the very beginning
+            ClearAliasTracking();
+
             var relevantTables = GetRelevantTables(queryModel);
 
             if (!relevantTables.Any())
@@ -43,6 +49,47 @@ public class SqlGeneratorService : ISqlGeneratorService
         }
     }
 
+    private void ClearAliasTracking()
+    {
+        _usedAliases.Clear();
+        _tableAliasCache.Clear();
+    }
+
+    
+    private string GetTableAliasFromCache(string tableId)
+    {
+        if (_tableAliasCache.TryGetValue(tableId, out string alias))
+        {
+            return EscapeIdentifier(alias);
+        }
+        // This shouldn't happen if aliases are generated properly
+        return EscapeIdentifier("unknown");
+    }
+
+    private string EnsureUniqueAlias(string baseAlias)
+    {
+        if (!_usedAliases.Contains(baseAlias))
+        {
+            return baseAlias;
+        }
+
+        // If base alias is already used, append a number
+        int counter = 1;
+        string uniqueAlias;
+
+        do
+        {
+            uniqueAlias = $"{baseAlias}{counter}";
+            counter++;
+        }
+        while (_usedAliases.Contains(uniqueAlias));
+
+        return uniqueAlias;
+    }
+
+    
+
+    
     private List<TableModel> GetRelevantTables(QueryModel queryModel)
     {
         // Include tables that have selected columns
@@ -96,6 +143,7 @@ public class SqlGeneratorService : ISqlGeneratorService
         sql.AppendLine("SELECT");
 
         var selectedColumns = new List<string>();
+        var usedColumnNames = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var table in tables.OrderBy(t => t.Name))
         {
@@ -115,17 +163,47 @@ public class SqlGeneratorService : ISqlGeneratorService
                     columnExpression = $"{tableAlias}.{EscapeIdentifier(column.Name)}";
                 }
 
-                var columnAlias = !string.IsNullOrEmpty(column.QueryAlias) && column.QueryAlias != column.Name
-                    ? $" AS {EscapeIdentifier(column.QueryAlias)}"
-                    : "";
+                string finalColumnName;
+                if (!string.IsNullOrEmpty(column.QueryAlias) && column.QueryAlias != column.Name)
+                {
+                    finalColumnName = column.QueryAlias;
+                }
+                else
+                {
+                    finalColumnName = column.Name;
+                }
 
-                selectedColumns.Add($"    {columnExpression}{columnAlias}");
+                // Handle duplicate column names
+                string uniqueColumnName = GetUniqueColumnName(finalColumnName, table.Name, usedColumnNames);
+
+                // Build the column expression with alias if needed
+                string columnWithAlias;
+                if (uniqueColumnName != finalColumnName)
+                {
+                    // Need to add/modify alias due to duplication
+                    columnWithAlias = $"{columnExpression} AS {EscapeIdentifier(uniqueColumnName)}";
+                }
+                else if (!string.IsNullOrEmpty(column.QueryAlias) && column.QueryAlias != column.Name)
+                {
+                    // Use existing user-defined alias
+                    columnWithAlias = $"{columnExpression} AS {EscapeIdentifier(column.QueryAlias)}";
+                }
+                else
+                {
+                    // No alias needed
+                    columnWithAlias = columnExpression;
+                }
+
+                selectedColumns.Add($"    {columnWithAlias}");
+
+                // Track this column name as used
+                usedColumnNames[uniqueColumnName] = usedColumnNames.GetValueOrDefault(uniqueColumnName, 0) + 1;
             }
         }
 
+        //select primary keys or first column from each table if no columns selected
         if (!selectedColumns.Any())
         {
-            // Fallback: select primary keys or first column from each table
             foreach (var table in tables)
             {
                 var tableAlias = GetTableAlias(table);
@@ -134,7 +212,16 @@ public class SqlGeneratorService : ISqlGeneratorService
 
                 if (columnToSelect != null)
                 {
-                    selectedColumns.Add($"    {tableAlias}.{EscapeIdentifier(columnToSelect.Name)}");
+                    string uniqueColumnName = GetUniqueColumnName(columnToSelect.Name, table.Name, usedColumnNames);
+                    string columnExpression = $"{tableAlias}.{EscapeIdentifier(columnToSelect.Name)}";
+
+                    if (uniqueColumnName != columnToSelect.Name)
+                    {
+                        columnExpression += $" AS {EscapeIdentifier(uniqueColumnName)}";
+                    }
+
+                    selectedColumns.Add($"    {columnExpression}");
+                    usedColumnNames[uniqueColumnName] = usedColumnNames.GetValueOrDefault(uniqueColumnName, 0) + 1;
                 }
             }
         }
@@ -168,7 +255,7 @@ public class SqlGeneratorService : ISqlGeneratorService
     }
 
     private void BuildJoinsRecursively(StringBuilder sql, TableModel currentTable, List<TableModel> allTables,
-        List<RelationshipModel> relationships, HashSet<string> processedTables)
+    List<RelationshipModel> relationships, HashSet<string> processedTables)
     {
         var relatedRelationships = relationships
             .Where(r =>
@@ -189,22 +276,26 @@ public class SqlGeneratorService : ISqlGeneratorService
                 processedTables.Add(joinTable.Id);
 
                 var joinType = GetJoinTypeKeyword(relationship.JoinType);
-                var joinTableAlias = GetTableAlias(joinTable);
-                var currentTableAlias = GetTableAlias(currentTable);
+                var joinTableAlias = GetTableAlias(joinTable); // This will use cached alias
+                var currentTableAlias = GetTableAlias(currentTable); // This will use cached alias
 
                 var schemaPrefix = !string.IsNullOrEmpty(joinTable.Schema) ? $"{EscapeIdentifier(joinTable.Schema)}." : "";
 
-                // Build join condition
-                var leftColumn = isSourceTable
-                    ? $"{currentTableAlias}.{EscapeIdentifier(GetColumnName(currentTable, relationship.SourceColumnId))}"
-                    : $"{joinTableAlias}.{EscapeIdentifier(GetColumnName(joinTable, relationship.SourceColumnId))}";
+                // Build join condition - FIXED: Use the table that owns each column
+                var sourceTable = allTables.FirstOrDefault(t => t.Id == relationship.SourceTableId);
+                var targetTable = allTables.FirstOrDefault(t => t.Id == relationship.TargetTableId);
 
-                var rightColumn = isSourceTable
-                    ? $"{joinTableAlias}.{EscapeIdentifier(GetColumnName(joinTable, relationship.TargetColumnId))}"
-                    : $"{currentTableAlias}.{EscapeIdentifier(GetColumnName(currentTable, relationship.TargetColumnId))}";
+                if (sourceTable != null && targetTable != null)
+                {
+                    var sourceTableAlias = GetTableAlias(sourceTable);
+                    var targetTableAlias = GetTableAlias(targetTable);
 
-                sql.AppendLine($"{joinType} {schemaPrefix}{EscapeIdentifier(joinTable.Name)} AS {joinTableAlias}");
-                sql.AppendLine($"    ON {leftColumn} = {rightColumn}");
+                    var leftColumn = $"{sourceTableAlias}.{EscapeIdentifier(GetColumnName(sourceTable, relationship.SourceColumnId))}";
+                    var rightColumn = $"{targetTableAlias}.{EscapeIdentifier(GetColumnName(targetTable, relationship.TargetColumnId))}";
+
+                    sql.AppendLine($"{joinType} {schemaPrefix}{EscapeIdentifier(joinTable.Name)} AS {joinTableAlias}");
+                    sql.AppendLine($"    ON {leftColumn} = {rightColumn}");
+                }
 
                 // Continue recursively for this table
                 BuildJoinsRecursively(sql, joinTable, allTables, relationships, processedTables);
@@ -265,6 +356,9 @@ public class SqlGeneratorService : ISqlGeneratorService
     {
         try
         {
+            // Clear alias tracking at the very beginning
+            ClearAliasTracking();
+
             var relevantTables = GetRelevantTables(queryModel);
             if (!relevantTables.Any()) return "-- No relevant tables found";
 
@@ -329,6 +423,79 @@ public class SqlGeneratorService : ISqlGeneratorService
         }
 
         sql.AppendLine(string.Join(",\n", selectedColumns));
+    }
+
+    private string GetUniqueColumnName(string originalName, string tableName, Dictionary<string, int> usedNames)
+    {
+        // Check if the original name is already used
+        if (!usedNames.ContainsKey(originalName))
+        {
+            return originalName; // No conflict, use original name
+        }
+
+        // Try with table prefix first
+        string tablePrefix = GenerateTablePrefix(tableName);
+        string prefixedName = $"{tablePrefix}_{originalName}";
+
+        if (!usedNames.ContainsKey(prefixedName))
+        {
+            return prefixedName;
+        }
+
+        // If table prefix doesn't work, use numbered suffix
+        int counter = 1;
+        string numberedName;
+
+        do
+        {
+            numberedName = $"{originalName}_{counter}";
+            counter++;
+        }
+        while (usedNames.ContainsKey(numberedName) && counter <= 100); // Prevent infinite loop
+
+        return numberedName;
+    }
+
+    private string GenerateTablePrefix(string tableName)
+    {
+        if (string.IsNullOrWhiteSpace(tableName))
+            return "T";
+
+        // Generate a short prefix from table name
+        // Take first letter + consonants, max 3 characters
+        var prefix = new StringBuilder();
+        var cleanName = tableName.Replace("_", "").Replace("-", "");
+
+        if (cleanName.Length > 0)
+        {
+            prefix.Append(char.ToUpper(cleanName[0])); // First letter
+
+            // Add consonants up to 2 more characters
+            var consonants = "BCDFGHJKLMNPQRSTVWXYZ";
+            for (int i = 1; i < cleanName.Length && prefix.Length < 3; i++)
+            {
+                char c = char.ToUpper(cleanName[i]);
+                if (consonants.Contains(c))
+                {
+                    prefix.Append(c);
+                }
+            }
+        }
+
+        // If we don't have enough characters, pad with the first few letters
+        while (prefix.Length < 2 && prefix.Length < cleanName.Length)
+        {
+            for (int i = 1; i < cleanName.Length && prefix.Length < 3; i++)
+            {
+                if (!prefix.ToString().Contains(char.ToUpper(cleanName[i])))
+                {
+                    prefix.Append(char.ToUpper(cleanName[i]));
+                }
+            }
+            break; // Prevent infinite loop
+        }
+
+        return prefix.Length > 0 ? prefix.ToString() : "T";
     }
 
     public string GenerateInsertQuery(TableModel table, Dictionary<string, object> values)
@@ -444,30 +611,48 @@ public class SqlGeneratorService : ISqlGeneratorService
 
     private string GetTableAlias(TableModel table)
     {
-        // Use alias if it's different from table name, otherwise use table name
-        if (!string.IsNullOrEmpty(table.Alias) && table.Alias != table.Name)
+        // Check cache first to ensure consistency
+        if (_tableAliasCache.TryGetValue(table.Id, out string cachedAlias))
         {
-            return EscapeIdentifier(table.Alias);
+            return EscapeIdentifier(cachedAlias);
         }
 
-        // Generate short alias from table name if no custom alias
-        var alias = GenerateShortAlias(table.Name);
-        return EscapeIdentifier(alias);
+        string proposedAlias;
+
+        // Use custom alias if it's different from table name and not already used
+        if (!string.IsNullOrEmpty(table.Alias) && table.Alias != table.Name)
+        {
+            proposedAlias = table.Alias;
+            if (!_usedAliases.Contains(proposedAlias))
+            {
+                _usedAliases.Add(proposedAlias);
+                _tableAliasCache[table.Id] = proposedAlias;
+                return EscapeIdentifier(proposedAlias);
+            }
+        }
+
+        // Generate short alias from table name
+        proposedAlias = GenerateShortAlias(table.Name);
+
+        // Ensure the alias is unique
+        var uniqueAlias = EnsureUniqueAlias(proposedAlias);
+        _usedAliases.Add(uniqueAlias);
+        _tableAliasCache[table.Id] = uniqueAlias;
+
+        return EscapeIdentifier(uniqueAlias);
     }
 
     private string GenerateShortAlias(string tableName)
     {
-        // Generate meaningful short aliases
-        var words = tableName.Split(new[] { '_', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        if (string.IsNullOrEmpty(tableName))
+            return "t";
 
-        if (words.Length > 1)
-        {
-            // Take first letter of each word
-            return string.Join("", words.Select(w => w[0])).ToLower();
-        }
+        // Take first 3 characters and make lowercase
+        var alias = tableName.Length >= 3
+            ? tableName.Substring(0, 3).ToLowerInvariant()
+            : tableName.ToLowerInvariant();
 
-        // For single words, take first few characters
-        return tableName.Length >= 3 ? tableName.Substring(0, 3).ToLower() : tableName.ToLower();
+        return alias;
     }
 
     private string GetColumnName(TableModel table, string columnId)

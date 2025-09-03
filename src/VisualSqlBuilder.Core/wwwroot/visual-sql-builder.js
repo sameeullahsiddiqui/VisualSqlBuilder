@@ -141,6 +141,23 @@ window.sqlBuilderInterop = {
         }
     },
 
+    autoResizeTable: function (tableElement) {
+        if (!tableElement) return;
+
+
+        const columnCount = tableElement.querySelectorAll('.column-row').length;
+
+
+        // Define min/max width per column
+        const baseWidth = 150; // px per column
+        const minWidth = 200;
+        const maxWidth = 800;
+
+
+        const newWidth = Math.min(Math.max(columnCount * baseWidth, minWidth), maxWidth);
+        tableElement.style.width = `${newWidth}px`;
+    },
+
     setupRelationshipCreation: function () {
         // Enhanced column connector setup with better isolation from table interactions
         document.addEventListener('mousedown', (e) => {
@@ -1534,6 +1551,23 @@ window.sqlBuilderInterop = {
         }
     },
 
+    downloadFile: function (filename, content, contentType) {
+        const blob = new Blob([content], { type: contentType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    },
+
+    openResultsWindow: function (htmlContent) {
+        const newWindow = window.open('', '_blank', 'width=1000,height=600,scrollbars=yes,resizable=yes');
+        newWindow.document.write(htmlContent);
+        newWindow.document.close();
+    },
 };
 
 const style = document.createElement('style');
@@ -1622,6 +1656,14 @@ export function updateDomainBoundsAnimated(domainId, x, y, width, height, animat
     window.sqlBuilderInterop.updateDomainBoundsAnimated(domainId, x, y, width, height, animate = true);
 }
 
+export function downloadFile(filename, content, contentType) {
+    window.sqlBuilderInterop.downloadFile(filename, content, contentType);
+}
+
+export function openResultsWindow(htmlContent) {
+    window.sqlBuilderInterop.openResultsWindow(htmlContent);
+}
+
 // Make functions available globally
 window.initializeSqlCanvas = initializeSqlCanvas;
 window.setCanvasZoom = setCanvasZoom;
@@ -1641,3 +1683,5 @@ window.autoArrangeDomains = autoArrangeDomains;
 window.updateTableVisibilityForDomain = updateTableVisibilityForDomain;
 window.toggleDomainCollapse = toggleDomainCollapse;
 window.updateDomainBoundsAnimated = updateDomainBoundsAnimated;
+window.downloadFile = downloadFile;
+window.openResultsWindow = openResultsWindow;

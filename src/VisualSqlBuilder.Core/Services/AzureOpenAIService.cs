@@ -23,7 +23,7 @@ public class AzureOpenAIOptions
 public class AzureOpenAIService : IAzureOpenAIService
 {
     private readonly AzureOpenAIOptions _options;
-    private readonly OpenAIClient _client;
+    private readonly OpenAIClient? _client;
 
     
     public AzureOpenAIService(IOptions<AzureOpenAIOptions> options)

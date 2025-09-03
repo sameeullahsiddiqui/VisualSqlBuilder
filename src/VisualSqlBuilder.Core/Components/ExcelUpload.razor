@@ -386,7 +386,7 @@
             StateHasChanged();
             await Task.Delay(100); // Allow UI update
 
-            _uploadedTables = await SchemaService.LoadTablesFromExcelAsync(ms);
+            _uploadedTables = SchemaService.LoadTablesFromExcel(ms);
 
             AddProcessingMessage($"Found {_uploadedTables.Count} sheets");
             _processingProgress = 80;
